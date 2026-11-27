@@ -1357,34 +1357,35 @@ async function runIntro() {
   // une touche passe l'intro, sauf quand on règle le panneau au clavier
   const keySkip = (e) => { if (e.target.closest?.("#panel")) return; document.removeEventListener("keydown", keySkip); skip(); };
   document.addEventListener("keydown", keySkip);
-  // texte tapé à la machine
-  for (let li = 0; li < INTRO_LINES.length; li++) {
-    if (li) { introText.textContent += "\n"; await introWait(650); }
-    for (const ch of INTRO_LINES[li]) {
-      if (introSkip) { introText.textContent = INTRO_LINES.join("\n"); break; }
-      introText.textContent += ch;
-      await introWait(ch === " " ? 25 : 55 + Math.random() * 45);
-    }
-    if (introSkip) break;
-  }
-  await introWait(1800);
-  const ok = await soundReady;                      // le texte reste tant que le son n'est pas analysé
-  // fondu au noir du texte
-  introText.classList.add("gone");
-  await new Promise((r) => setTimeout(r, 1000));
-  if (ok) {
-    try { await tryStart(); }
+  // le son démarre dès que l'analyse est prête, pendant que le texte s'écrit ;
+  // si le navigateur le bloque, « click to enter » apparaît tout de suite sous le texte
+  const soundStarted = (async () => {
+    if (!(await soundReady)) return false;
+    try { await tryStart(); return true; }
     catch {
-      // son bloqué : on attend un clic sur le noir
       $("introHint").hidden = false;
       await new Promise((r) => { introGesture = r; if (introSkip) r(); });
       $("introHint").hidden = true;
-      try { await tryStart(); } catch {}
+      try { await tryStart(); return true; } catch { return false; }
     }
+  })();
+  // texte tapé à la machine, vite
+  for (let li = 0; li < INTRO_LINES.length; li++) {
+    if (li) { introText.textContent += "\n"; await introWait(250); }
+    for (const ch of INTRO_LINES[li]) {
+      if (introSkip) { introText.textContent = INTRO_LINES.join("\n"); break; }
+      introText.textContent += ch;
+      await introWait(ch === " " ? 10 : 22 + Math.random() * 18);
+    }
+    if (introSkip) break;
   }
-  // fondu d'ouverture sur le travelling (le panneau, lui, est resté affiché pendant toute l'intro)
+  await introWait(900);
+  await soundStarted;                               // le texte reste tant que le son n'a pas démarré
+  // fondu au noir du texte, le son court déjà
+  introText.classList.add("gone");
+  await new Promise((r) => setTimeout(r, 700));  // fondu d'ouverture sur le travelling (le panneau, lui, est resté affiché pendant toute l'intro)
   introEl.classList.add("out");
-  setTimeout(() => { document.body.classList.remove("intro"); introEl.hidden = true; }, 1800);
+  setTimeout(() => { document.body.classList.remove("intro"); introEl.hidden = true; }, 1400);
 }
 
 resize();
