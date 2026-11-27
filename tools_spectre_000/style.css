@@ -21,6 +21,19 @@ html, body { background: #000; }
 }
 #gl:active { cursor: grabbing; }
 
+/* Calque de données (suivi, traits techniques) : par-dessus le rendu, sous les panneaux, ne capte pas la souris */
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+/* Palette choisie : blanche, comme une pilule active */
+#palettes .palette[aria-pressed="true"] { background: var(--ink) !important; }
+
 /* Panneaux en verre posés sur le rendu ; H les masque */
 #panel {
   position: fixed;
@@ -64,23 +77,6 @@ body.panel-hidden #rightPanel {
   justify-content: space-between;
 }
 #seek { width: 100%; }
-
-/* Couleurs : quatre pastilles sur une ligne */
-#colorRow {
-  display: flex;
-  gap: 6px;
-}
-#colorRow label {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: var(--fs-small);
-}
-#colorRow input[type="color"] {
-  width: 100%;
-  height: 28px;
-}
 
 /* Message au centre : analyse en cours, fichier à déposer */
 #status {

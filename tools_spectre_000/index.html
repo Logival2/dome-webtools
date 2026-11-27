@@ -17,14 +17,16 @@
 </head>
 <body data-mobile="ok" data-layout="fullscreen">
 
-<!-- Rendu plein écran -->
+<!-- Rendu plein écran, puis le calque de données par-dessus -->
 <canvas id="gl"></canvas>
+<canvas id="overlay"></canvas>
 <p id="status" class="mono">Loading…</p>
 
 <!-- Panneau latéral (paramètres)
      Principe : le spectrogramme du son (temps × fréquence) devient un espace en 3D.
      Le temps est la profondeur : la caméra avance dans le son au rythme de la lecture.
-     Chaque point est une particule, d'autant plus dense que le son est fort à cette fréquence. -->
+     Chaque point est une particule, d'autant plus dense que le son est fort à cette fréquence ;
+     ce qui sort du bruit de fond (un cri, un appel) devient un « événement », repéré et suivi. -->
 <aside id="panel">
 
   <header id="panelHead">
@@ -32,22 +34,11 @@
     <h1 class="toolTitle">Spectral<br>travel</h1>
   </header>
 
-  <!-- Son : lecture du spectrogramme -->
+  <!-- Son : ce que les particules montrent -->
   <div class="section">
     <h2>Sound</h2>
-    <div class="row">
-      <label for="resSelect" title="FFT size: fine = sharper pitch, coarser time">Analysis</label>
-      <select id="resSelect" class="asPills">
-        <option value="1024">Fast</option>
-        <option value="2048" selected>Medium</option>
-        <option value="4096">Fine</option>
-      </select>
-    </div>
-    <div class="row"><label for="events" title="0 = the raw spectrogram · 1 = only what stands out from the background noise (calls, cries, clicks)">Events</label><input id="events" type="range" min="0" max="1" step="0.01" value="0.7" /></div>
-    <div class="row"><label for="evFloor" title="How far above the background a sound must rise to count as an event">Event from</label><input id="evFloor" type="range" min="0" max="0.8" step="0.01" value="0.1" /></div>
-    <div class="row"><label for="floor" title="Quieter parts of the raw spectrum vanish">Threshold</label><input id="floor" type="range" min="0" max="0.95" step="0.01" value="0.38" /></div>
-    <div class="row"><label for="gain" title="Boost of what remains">Gain</label><input id="gain" type="range" min="0.2" max="4" step="0.01" value="1.6" /></div>
-    <div class="row"><label for="contrast" title="Above 1: only the loudest peaks stay">Contrast</label><input id="contrast" type="range" min="0.3" max="3" step="0.01" value="1.2" /></div>
+    <div class="row"><label for="events" title="0 = the whole spectrogram · 1 = only what stands out from the background noise (calls, cries, clicks)">Events</label><input id="events" type="range" min="0" max="1" step="0.01" value="0.7" /></div>
+    <div class="row"><label for="sens" title="Low = only the loudest sounds · high = even faint ones">Sensitivity</label><input id="sens" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
     <label class="check"><input id="stereo" type="checkbox" checked /><span>Stereo · left and right apart</span></label>
     <p class="hint" id="soundInfo"></p>
   </div>
@@ -66,16 +57,13 @@
     <p class="hint" id="shapeHint"></p>
     <div class="row"><label for="radius" title="Size of the space around the camera">Radius</label><input id="radius" type="range" min="0.5" max="10" step="0.05" value="3" /></div>
     <div class="row"><label for="relief" title="Loud sounds come closer to the camera">Relief</label><input id="relief" type="range" min="0" max="1.5" step="0.01" value="0.55" /></div>
-    <div class="row"><label for="thick" title="Scatter of the points around the surface">Thickness</label><input id="thick" type="range" min="0" max="2" step="0.01" value="0.35" /></div>
   </div>
 
   <!-- Travelling : la caméra avance dans le temps du son -->
   <div class="section">
     <h2>Travel</h2>
     <div class="row"><label for="speed" title="Distance covered per second of sound">Speed</label><input id="speed" type="range" min="0.1" max="8" step="0.05" value="1.6" /></div>
-    <div class="row"><label for="span" title="Seconds of sound visible ahead">Ahead</label><input id="span" data-unit="s" type="range" min="2" max="40" step="0.5" value="12" /></div>
     <div class="row"><label for="wander" title="The camera drifts, like a flying insect">Wander</label><input id="wander" type="range" min="0" max="1" step="0.01" value="0.25" /></div>
-    <div class="row"><label for="fov" title="Low = tele, high = wide angle">Lens</label><input id="fov" data-unit="°" type="range" min="20" max="130" step="1" value="75" /></div>
     <p class="hint">Drag on the image to look around, double-click to look ahead again.</p>
   </div>
 
@@ -83,60 +71,35 @@
   <div class="section">
     <h2>Matter</h2>
     <div class="row"><label for="count" title="Number of particles (heavier above 1.5 M)">Points</label><input id="count" data-unit="k" type="range" min="100" max="3000" step="50" value="800" /></div>
-    <div class="row"><label for="density" title="Share of the particles the sound lights up">Density</label><input id="density" type="range" min="0" max="2" step="0.01" value="1" /></div>
-    <div class="row"><label for="dust" title="Faint particles that stay in the silence">Dust</label><input id="dust" type="range" min="0" max="0.3" step="0.005" value="0.03" /></div>
     <div class="row"><label for="size" title="Size of a particle">Size</label><input id="size" type="range" min="0.003" max="0.12" step="0.001" value="0.022" /></div>
-    <div class="row"><label for="soft" title="Hard dots or soft splats">Softness</label><input id="soft" type="range" min="0.2" max="4" step="0.01" value="1.4" /></div>
-    <div class="row"><label for="noise" title="Organic drift of the matter">Organic</label><input id="noise" type="range" min="0" max="1" step="0.01" value="0.28" /></div>
-    <div class="row"><label for="noiseScale" title="Size of the organic swirls">Grain</label><input id="noiseScale" type="range" min="0.05" max="3" step="0.01" value="0.55" /></div>
-    <div class="row"><label for="flow" title="How fast the matter breathes">Flow</label><input id="flow" type="range" min="0" max="2" step="0.01" value="0.25" /></div>
-    <div class="row"><label for="burst" title="Sudden sounds (calls, clicks) burst outwards">Burst</label><input id="burst" type="range" min="0" max="3" step="0.01" value="0.9" /></div>
+    <div class="row"><label for="noise" title="The matter drifts and breathes">Organic</label><input id="noise" type="range" min="0" max="1" step="0.01" value="0.28" /></div>
+    <div class="row"><label for="burst" title="Sudden sounds burst outwards">Burst</label><input id="burst" type="range" min="0" max="3" step="0.01" value="0.9" /></div>
   </div>
 
-  <!-- Couleurs -->
+  <!-- Rendu : palette, événements, halo, traînées -->
   <div class="section">
-    <h2>Colours</h2>
-    <div class="row">
-      <label for="colorBy">Colour by</label>
-      <select id="colorBy" class="asPills">
-        <option value="0">Pitch</option>
-        <option value="1">Energy</option>
-      </select>
+    <h2>Look</h2>
+    <div class="btnRow" id="palettes">
+      <button class="palette" type="button" data-palette="night">Night</button>
+      <button class="palette" type="button" data-palette="moss">Moss</button>
+      <button class="palette" type="button" data-palette="ember">Ember</button>
+      <button class="palette" type="button" data-palette="haze">Haze</button>
+      <button class="palette" type="button" data-palette="pigment">Pigment</button>
+      <button class="palette" type="button" data-palette="grey">Grey</button>
     </div>
-    <div id="colorRow">
-      <label>Low<input id="c1" type="color" value="#0b1d5c" /></label>
-      <label>Mid<input id="c2" type="color" value="#2e6cff" /></label>
-      <label>High<input id="c3" type="color" value="#dcefff" /></label>
-      <label>Fog<input id="fogColor" type="color" value="#000000" /></label>
-      <label>Event<input id="evColor" type="color" value="#ff9a2e" /></label>
-    </div>
-    <div class="btnRow">
-      <button class="palette" type="button" data-colors="#0b1d5c,#2e6cff,#dcefff,#000000,#ff9a2e" data-blend="add">Night</button>
-      <button class="palette" type="button" data-colors="#062417,#1fa36a,#d2ffe0,#000000,#ff4fd2" data-blend="add">Moss</button>
-      <button class="palette" type="button" data-colors="#3a0d00,#ff6a1a,#ffe5b8,#000000,#7fd4ff" data-blend="add">Ember</button>
-      <button class="palette" type="button" data-colors="#5c1f06,#c9661d,#f4c27c,#f2e8d6,#1238ff" data-blend="normal">Haze</button>
-      <button class="palette" type="button" data-colors="#25106b,#ff2d6b,#ffd3e2,#05020b,#fff04a" data-blend="add">Pigment</button>
-      <button class="palette" type="button" data-colors="#222222,#9a9a9a,#ffffff,#000000,#ff3b1f" data-blend="add">Grey</button>
-    </div>
-    <div class="row"><label for="highlight" title="Events take the event colour, grow and brighten">Highlight</label><input id="highlight" type="range" min="0" max="2" step="0.01" value="1" /></div>
-    <div class="row">
-      <label for="blend">Blend</label>
-      <select id="blend" class="asPills">
-        <option value="add">Light</option>
-        <option value="normal">Matter</option>
-      </select>
-    </div>
-    <div class="row"><label for="bright" title="Brightness of the particles">Brightness</label><input id="bright" type="range" min="0.05" max="3" step="0.01" value="0.9" /></div>
-    <div class="row"><label for="fog" title="The distance dissolves into the fog colour">Fog</label><input id="fog" type="range" min="0" max="0.3" step="0.001" value="0.06" /></div>
-  </div>
-
-  <!-- Post-traitement -->
-  <div class="section">
-    <h2>Glow · trails</h2>
+    <div class="row"><label for="highlight" title="Events take the accent colour, grow and brighten">Highlight</label><input id="highlight" type="range" min="0" max="2" step="0.01" value="1" /></div>
     <div class="row"><label for="bloom" title="Halo around the brightest points">Glow</label><input id="bloom" type="range" min="0" max="3" step="0.01" value="0.8" /></div>
-    <div class="row"><label for="bloomRadius" title="Width of the halo">Glow width</label><input id="bloomRadius" type="range" min="0" max="1" step="0.01" value="0.55" /></div>
-    <div class="row"><label for="bloomThreshold" title="Only points brighter than this glow">Glow from</label><input id="bloomThreshold" type="range" min="0" max="1" step="0.01" value="0.15" /></div>
     <div class="row"><label for="trails" title="Each image lingers: streaks of motion (0 = off)">Trails</label><input id="trails" type="range" min="0" max="0.98" step="0.01" value="0" /></div>
+  </div>
+
+  <!-- Données : suivi des événements, traits techniques -->
+  <div class="section">
+    <h2>Data</h2>
+    <label class="check"><input id="tracking" type="checkbox" checked /><span>Tracking · tags on the events</span></label>
+    <div class="row"><label for="tags" title="Most tags on screen at once">Tags</label><input id="tags" type="range" min="1" max="24" step="1" value="7" /></div>
+    <label class="check"><input id="links" type="checkbox" checked /><span>Links · events joined in time</span></label>
+    <label class="check"><input id="grid" type="checkbox" /><span>Grid · scales and readout</span></label>
+    <p class="hint">Tags and lines are included in PNG and video exports.</p>
   </div>
 
   <footer id="panelFooter">
@@ -185,12 +148,14 @@
 // ═══════════════════════════════════════════════════════════════════
 // Spectral travel — on voyage dans le spectrogramme d'un son.
 // 1. Le son entier est analysé (FFT, bandes en échelle logarithmique, gauche et droite séparées,
-//    plus les attaques : ce qui apparaît d'une image à l'autre). Résultat rangé dans une texture.
+//    attaques, et « événements » : ce qui sort du bruit de fond). Résultat rangé dans une texture.
 // 2. Un nuage fixe de particules sur le GPU : chaque particule a un instant (sa profondeur) et
 //    une fréquence (sa place autour de la caméra). Le vertex shader lit le spectrogramme à cet
 //    endroit : si le son y est fort, la particule apparaît, se rapproche, s'agite.
 // 3. La caméra avance avec la lecture : 1 seconde de son = « Speed » unités de profondeur.
 //    Les particules dépassées repartent au fond : le nuage ne finit jamais.
+// 4. Calque de données : les pics d'événements sont repérés à l'avance, projetés à l'écran,
+//    encadrés et étiquetés (fréquence, niveau au-dessus du fond).
 // ═══════════════════════════════════════════════════════════════════
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -201,12 +166,37 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("gl");
+const overlay = $("overlay"), octx = overlay.getContext("2d");
 const statusEl = $("status");
 const setStatus = (t) => { statusEl.textContent = t; statusEl.hidden = !t; };
 
+// ── Valeurs fixées (réglées une fois pour toutes ; les curseurs n'en gardent que l'essentiel) ──
+const FIXED = {
+  N: 2048,            // taille de FFT : ~43 images par seconde à 44,1 kHz
+  thick: 0.35,        // épaisseur de la couche de points autour de la surface
+  span: 12,           // secondes de son visibles devant la caméra
+  behind: 1.5,        // secondes gardées derrière
+  fov: 75,            // objectif
+  density: 1, dust: 0.03, soft: 1.4, contrast: 1.2,
+  noiseScale: 0.55,   // taille des volutes organiques
+  bright: 0.9, fog: 0.06,
+  bloomRadius: 0.55, bloomThreshold: 0.15,
+};
+// Palettes : grave, médium, aigu, brouillard, accent (événements), mélange
+const PALETTES = {
+  night:   { c: ["#0b1d5c", "#2e6cff", "#dcefff"], fog: "#000000", ev: "#ff9a2e", blend: "add" },
+  moss:    { c: ["#062417", "#1fa36a", "#d2ffe0"], fog: "#000000", ev: "#ff4fd2", blend: "add" },
+  ember:   { c: ["#3a0d00", "#ff6a1a", "#ffe5b8"], fog: "#000000", ev: "#7fd4ff", blend: "add" },
+  haze:    { c: ["#5c1f06", "#c9661d", "#f4c27c"], fog: "#f2e8d6", ev: "#1238ff", blend: "normal" },
+  pigment: { c: ["#25106b", "#ff2d6b", "#ffd3e2"], fog: "#05020b", ev: "#fff04a", blend: "add" },
+  grey:    { c: ["#222222", "#9a9a9a", "#ffffff"], fog: "#000000", ev: "#ff3b1f", blend: "add" },
+};
+let palette = "night";
+
 // ── Rendu ──
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const PR = Math.min(window.devicePixelRatio || 1, 2);
+renderer.setPixelRatio(PR);
 // une erreur de shader s'affiche au centre de l'écran plutôt que dans la console seule
 renderer.debug.onShaderError = (gl, program, vs, fs) => {
   setStatus(`Shader error: ${gl.getShaderInfoLog(vs) || ""} ${gl.getShaderInfoLog(fs) || ""}`.trim());
@@ -214,10 +204,10 @@ renderer.debug.onShaderError = (gl, program, vs, fs) => {
 window.addEventListener("error", (e) => { if (!/ResizeObserver/.test(e.message)) setStatus(`Error: ${e.message}`); });
 window.addEventListener("unhandledrejection", (e) => setStatus(`Error: ${e.reason?.message || e.reason}`));
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, 1, 0.01, 400);
+const camera = new THREE.PerspectiveCamera(FIXED.fov, 1, 0.01, 400);
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.8, 0.55, 0.15);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.8, FIXED.bloomRadius, FIXED.bloomThreshold);
 composer.addPass(bloomPass);
 const trailPass = new AfterimagePass(0);
 composer.addPass(trailPass);
@@ -225,7 +215,8 @@ composer.addPass(new OutputPass());
 
 // ── Analyse du son ──
 const BANDS = 256, FMIN = 30, FMAX = 18000;
-let spec = null;          // { tex, frames, fps, K, duration, mono (pour la bande 2D) }
+const bandHz = (f01) => FMIN * Math.pow(FMAX / FMIN, f01);
+let spec = null;          // { tex, frames, fps, K, duration, mono, events, peaks }
 let audioBuffer = null;   // le son décodé, gardé pour relancer l'analyse
 let soundName = "";
 
@@ -342,11 +333,39 @@ async function analyse(buffer, N) {
     for (let df = -1; df <= 1; df++) for (let dbd = -1; dbd <= 1; dbd++) {
       const ff = f + df, bb = b + dbd;
       if (ff < 0 || ff >= frames || bb < 0 || bb >= BANDS) continue;
-      const k = (df === 0 ? 2 : 1) * (dbd === 0 ? 2 : 1);
-      s += salRaw[ff * BANDS + bb] * k; w += k;
+      const kk = (df === 0 ? 2 : 1) * (dbd === 0 ? 2 : 1);
+      s += salRaw[ff * BANDS + bb] * kk; w += kk;
     }
     sal[f * BANDS + b] = s / w;
   }
+
+  // ── Pics d'événements, pour le calque de données ──
+  // candidats : maxima locaux nets ; puis on garde les plus forts, espacés (≥ 0,3 s ou ≥ 14 bandes)
+  const cand = [];
+  for (let f = 1; f < frames - 1; f++) for (let b = 1; b < BANDS - 1; b++) {
+    const i = f * BANDS + b, v = sal[i];
+    if (v < 0.3) continue;
+    if (v < sal[i - 1] || v < sal[i + 1] || v < sal[i - BANDS] || v < sal[i + BANDS]) continue;
+    cand.push(i);
+  }
+  cand.sort((a, b) => sal[b] - sal[a]);
+  const tf = Math.round(fps * 0.3), tb = 14, bucket = new Map(), peaks = [];
+  for (const i of cand) {
+    const f = Math.floor(i / BANDS), b = i % BANDS, key = Math.floor(f / tf);
+    let clash = false;
+    for (let kb = key - 1; kb <= key + 1 && !clash; kb++) {
+      for (const p of bucket.get(kb) || []) if (Math.abs(p.f - f) < tf && Math.abs(p.b - b) < tb) { clash = true; break; }
+    }
+    if (clash) continue;
+    const p = { f, b, t: f / fps, f01: b / (BANDS - 1), v: sal[i], side: vR[i] >= vL[i] ? 1 : -1,
+      hz: bandHz((b + 0.5) / BANDS), dB: (vM[i] - mean[i]) * range };
+    peaks.push(p);
+    if (!bucket.has(key)) bucket.set(key, []);
+    bucket.get(key).push(p);
+    if (peaks.length >= 6000) break;
+  }
+  peaks.sort((a, b) => a.t - b.t);
+  peaks.forEach((p, j) => { p.id = j + 1; });
 
   // texture : chaque ligne range K images de BANDS bandes ; R gauche, V droite, B attaques, A événements
   const maxTex = renderer.capabilities.maxTextureSize;
@@ -370,7 +389,7 @@ async function analyse(buffer, N) {
   const tex = new THREE.DataTexture(data, texW, texH, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.minFilter = tex.magFilter = THREE.NearestFilter;
   tex.needsUpdate = true;
-  return { tex, frames, fps, K, duration: buffer.duration, mono, events, N };
+  return { tex, frames, fps, K, duration: buffer.duration, mono, events, peaks, N };
 }
 
 // ── Particules ──
@@ -498,17 +517,17 @@ void main(){
 
 const fragmentShader = /* glsl */`
 uniform vec3 uC1, uC2, uC3, uFogColor, uCEv;
-uniform float uColorBy, uSoft, uBright, uHighlight;
+uniform float uSoft, uBright, uHighlight;
 varying float vA, vFreq, vAlpha, vFog, vFlux, vEv;
 void main(){
   float d = length(gl_PointCoord - 0.5) * 2.;
   if (d > 1.) discard;
   float m = pow(1. - d, uSoft);
-  float k = uColorBy < 0.5 ? vFreq : vA;
+  float k = vFreq;
   vec3 col = k < 0.5 ? mix(uC1, uC2, k * 2.) : mix(uC2, uC3, k * 2. - 1.);
   col = mix(col, uC3, vFlux * 0.5);
   col *= uBright * (0.45 + 0.9 * vA);
-  // événement : la couleur d'événement prend le dessus, plus lumineuse
+  // événement : la couleur d'accent prend le dessus, plus lumineuse
   float h = clamp(vEv * uHighlight, 0., 1.);
   col = mix(col, uCEv * uBright * (0.7 + 0.6 * h), h);
   col = mix(col, uFogColor, vFog);
@@ -517,12 +536,13 @@ void main(){
 
 const uniforms = {
   uSpec: { value: null }, uK: { value: 1 }, uBands: { value: BANDS }, uFrames: { value: 1 }, uFps: { value: 1 }, uDur: { value: 0 },
-  uTime: { value: 0 }, uSpan: { value: 12 }, uBehind: { value: 1.5 }, uSpeed: { value: 1.6 }, uShape: { value: 0 },
-  uRadius: { value: 3 }, uRelief: { value: 0.5 }, uThick: { value: 0.3 },
-  uFloor: { value: 0.4 }, uGain: { value: 1.5 }, uContrast: { value: 1 }, uStereo: { value: 1 }, uDensity: { value: 1 }, uDust: { value: 0.03 },
-  uSize: { value: 0.02 }, uScale: { value: 500 }, uNoise: { value: 0.3 }, uNoiseScale: { value: 0.5 }, uFlowT: { value: 0 }, uBurst: { value: 1 },
-  uFog: { value: 0.06 }, uC1: { value: new THREE.Color() }, uC2: { value: new THREE.Color() }, uC3: { value: new THREE.Color() },
-  uFogColor: { value: new THREE.Color() }, uColorBy: { value: 0 }, uSoft: { value: 1.4 }, uBright: { value: 1 },
+  uTime: { value: 0 }, uSpan: { value: FIXED.span }, uBehind: { value: FIXED.behind }, uSpeed: { value: 1.6 }, uShape: { value: 0 },
+  uRadius: { value: 3 }, uRelief: { value: 0.5 }, uThick: { value: FIXED.thick },
+  uFloor: { value: 0.4 }, uGain: { value: 1.5 }, uContrast: { value: FIXED.contrast }, uStereo: { value: 1 },
+  uDensity: { value: FIXED.density }, uDust: { value: FIXED.dust },
+  uSize: { value: 0.02 }, uScale: { value: 500 }, uNoise: { value: 0.3 }, uNoiseScale: { value: FIXED.noiseScale }, uFlowT: { value: 0 }, uBurst: { value: 1 },
+  uFog: { value: FIXED.fog }, uC1: { value: new THREE.Color() }, uC2: { value: new THREE.Color() }, uC3: { value: new THREE.Color() },
+  uFogColor: { value: new THREE.Color() }, uSoft: { value: FIXED.soft }, uBright: { value: FIXED.bright },
   uEvents: { value: 0.7 }, uEvFloor: { value: 0.1 }, uHighlight: { value: 1 }, uCEv: { value: new THREE.Color() },
 };
 const material = new THREE.ShaderMaterial({
@@ -548,33 +568,36 @@ function buildPoints(count) {
 }
 
 // ── Réglages ──
-const SLIDERS = ["events", "evFloor", "highlight", "floor", "gain", "contrast", "radius", "relief", "thick", "speed", "span", "wander", "fov",
-  "count", "density", "dust", "size", "soft", "noise", "noiseScale", "flow", "burst", "bright", "fog",
-  "bloom", "bloomRadius", "bloomThreshold", "trails"];
+const SLIDERS = ["events", "sens", "radius", "relief", "speed", "wander", "count", "size", "noise", "burst",
+  "highlight", "bloom", "trails", "tags"];
 const S = {};
+let ink = "#ffffff";       // couleur des traits du calque de données (noir sur brouillard clair)
 function readState() {
   for (const id of SLIDERS) S[id] = parseFloat($(id).value);
   S.shape = parseFloat($("shapeSelect").value);
-  S.colorBy = parseFloat($("colorBy").value);
-  S.blend = $("blend").value;
   S.stereo = $("stereo").checked;
+  S.tracking = $("tracking").checked;
+  S.links = $("links").checked;
+  S.grid = $("grid").checked;
+  // un seul curseur de sensibilité règle le seuil du brut, le seuil des événements et le gain
+  S.floor = 0.62 - 0.45 * S.sens;
+  S.evFloor = Math.max(0, 0.3 - 0.4 * S.sens);
+  S.gain = 1 + 1.2 * S.sens;
+  const P = PALETTES[palette];
   const U = uniforms;
-  U.uFloor.value = S.floor; U.uGain.value = S.gain; U.uContrast.value = S.contrast; U.uStereo.value = S.stereo ? 1 : 0;
-  U.uShape.value = S.shape; U.uRadius.value = S.radius; U.uRelief.value = S.relief; U.uThick.value = S.thick;
-  U.uSpeed.value = S.speed; U.uSpan.value = S.span;
-  U.uDensity.value = S.density; U.uDust.value = S.dust; U.uSize.value = S.size; U.uSoft.value = S.soft;
-  U.uNoise.value = S.noise; U.uNoiseScale.value = S.noiseScale; U.uBurst.value = S.burst;
-  U.uBright.value = S.bright; U.uFog.value = S.fog; U.uColorBy.value = S.colorBy;
-  U.uC1.value.set($("c1").value); U.uC2.value.set($("c2").value); U.uC3.value.set($("c3").value);
-  U.uFogColor.value.set($("fogColor").value);
+  U.uFloor.value = S.floor; U.uGain.value = S.gain; U.uStereo.value = S.stereo ? 1 : 0;
   U.uEvents.value = S.events; U.uEvFloor.value = S.evFloor; U.uHighlight.value = S.highlight;
-  U.uCEv.value.set($("evColor").value);
-  renderer.setClearColor($("fogColor").value, 1);
-  material.blending = S.blend === "add" ? THREE.AdditiveBlending : THREE.NormalBlending;
-  bloomPass.strength = S.bloom; bloomPass.radius = S.bloomRadius; bloomPass.threshold = S.bloomThreshold;
+  U.uShape.value = S.shape; U.uRadius.value = S.radius; U.uRelief.value = S.relief;
+  U.uSpeed.value = S.speed; U.uSize.value = S.size; U.uNoise.value = S.noise; U.uBurst.value = S.burst;
+  U.uC1.value.set(P.c[0]); U.uC2.value.set(P.c[1]); U.uC3.value.set(P.c[2]);
+  U.uFogColor.value.set(P.fog); U.uCEv.value.set(P.ev);
+  renderer.setClearColor(P.fog, 1);
+  material.blending = P.blend === "add" ? THREE.AdditiveBlending : THREE.NormalBlending;
+  ink = new THREE.Color(P.fog).getHSL({}).l > 0.5 ? "#000000" : "#ffffff";
+  bloomPass.strength = S.bloom;
   trailPass.enabled = S.trails > 0;
   trailPass.uniforms.damp.value = S.trails;
-  if (camera.fov !== S.fov) { camera.fov = S.fov; camera.updateProjectionMatrix(); updateScale(); }
+  document.querySelectorAll(".palette").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.palette === palette)));
   const hints = [
     "Lows on the floor, highs on the ceiling, left and right channels on each side. Loud sounds close in.",
     "Height follows pitch: lows near the ground, highs in the treetops, on both sides of a clearing.",
@@ -592,6 +615,7 @@ function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
+  overlay.width = Math.round(w * PR); overlay.height = Math.round(h * PR);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   updateScale();
@@ -635,6 +659,7 @@ function seekTo(t) {
   syncClock();
 }
 const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+const fmtMs = (t) => `${fmt(t)}.${String(Math.floor((t % 1) * 100)).padStart(2, "0")}`;
 
 // ── Chargement d'un son ──
 let objectUrl = null;
@@ -650,16 +675,15 @@ async function loadSound(arrayBuffer, name, url) {
 }
 async function runAnalysis() {
   if (!audioBuffer) return;
-  const N = parseInt($("resSelect").value, 10);
   try {
-    const res = await analyse(audioBuffer, N);
+    const res = await analyse(audioBuffer, FIXED.N);
     if (spec) spec.tex.dispose();
     spec = res;
     uniforms.uSpec.value = spec.tex; uniforms.uK.value = spec.K; uniforms.uFrames.value = spec.frames;
     uniforms.uFps.value = spec.fps; uniforms.uDur.value = spec.duration;
     drawStripBase();
     $("durLabel").textContent = fmt(spec.duration);
-    $("soundInfo").textContent = `${soundName} · ${fmt(spec.duration)} · ${audioBuffer.numberOfChannels === 1 ? "mono" : "stereo"} · ${audioBuffer.sampleRate} Hz\n${spec.frames.toLocaleString("en")} frames × ${BANDS} bands · ${Math.round(spec.fps)} frames/s`;
+    $("soundInfo").textContent = `${soundName} · ${fmt(spec.duration)} · ${audioBuffer.numberOfChannels === 1 ? "mono" : "stereo"} · ${audioBuffer.sampleRate} Hz\n${spec.peaks.length.toLocaleString("en")} events found`;
     setStatus("");
     // ?t=42 : ouvre la page à 42 s du son
     const askedT = parseFloat(new URLSearchParams(location.search).get("t"));
@@ -728,7 +752,7 @@ function drawStrip(t) {
   if (!stripBase || !spec) return;
   sctx.putImageData(stripBase, 0, 0);
   const x = t / spec.duration * strip.width;
-  const ahead = S.span / spec.duration * strip.width;
+  const ahead = FIXED.span / spec.duration * strip.width;
   sctx.fillStyle = "rgba(228,251,2,0.18)";
   sctx.fillRect(x, 0, ahead, strip.height);
   sctx.fillStyle = "#e4fb02";
@@ -739,6 +763,143 @@ strip.addEventListener("click", (e) => {
   const r = strip.getBoundingClientRect();
   seekTo((e.clientX - r.left) / r.width * spec.duration);
 });
+
+// ── Calque de données : suivi des événements, traits techniques ──
+// position 3D d'un point du spectrogramme, comme dans le shader (sans la dérive organique)
+function worldOf(t, f01, side, a) {
+  const R = S.radius, z = -t * S.speed;
+  if (S.shape === 0) {
+    const ang = -Math.PI / 2 + side * f01 * Math.PI, r = R * (1 - 0.75 * S.relief * a);
+    return new THREE.Vector3(Math.cos(ang) * r, Math.sin(ang) * r, z);
+  }
+  if (S.shape === 1) return new THREE.Vector3(side * R * 1.1 * (1 - 0.45 * S.relief * a), (-0.9 + 2.7 * f01) * R, z);
+  return new THREE.Vector3(side * (0.04 + f01) * R * 1.8, -0.75 * R + a * S.relief * R * 1.1, z);
+}
+// écran : coordonnées en pixels du calque, ou null si derrière la caméra
+const toScreen = (v) => {
+  const p = v.clone().project(camera);
+  if (p.z > 1 || p.z < -1) return null;
+  return { x: (p.x + 1) / 2 * overlay.width, y: (1 - p.y) / 2 * overlay.height };
+};
+const firstAfter = (arr, t) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].t < t) lo = m + 1; else hi = m; } return lo; };
+const fmtHz = (hz) => hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 1 : 2)} kHz` : `${Math.round(hz)} Hz`;
+
+function drawData(t) {
+  const c = octx, W = overlay.width, H = overlay.height, u = PR;
+  c.clearRect(0, 0, W, H);
+  if (!spec || (!S.tracking && !S.grid)) return;
+  c.lineWidth = u;
+  c.font = `${11 * u}px "Nord SemiBold", serif`;
+  c.textBaseline = "middle";
+  const inkA = (a) => ink === "#ffffff" ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
+
+  // ── Grille : graduations de fréquence sur la paroi, secondes au sol, réticule, lecture ──
+  if (S.grid) {
+    c.strokeStyle = inkA(0.35); c.fillStyle = inkA(0.75);
+    // réticule au centre
+    const cx = W / 2, cy = H / 2, g = 6 * u, l = 14 * u;
+    c.beginPath();
+    c.moveTo(cx - g - l, cy); c.lineTo(cx - g, cy); c.moveTo(cx + g, cy); c.lineTo(cx + g + l, cy);
+    c.moveTo(cx, cy - g - l); c.lineTo(cx, cy - g); c.moveTo(cx, cy + g); c.lineTo(cx, cy + g + l);
+    c.stroke();
+    // fréquences : une graduation par décade, à 4 s devant, des deux côtés
+    for (const hz of [100, 1000, 10000]) {
+      const f01 = Math.log(hz / FMIN) / Math.log(FMAX / FMIN);
+      for (const side of [-1, 1]) {
+        const p = toScreen(worldOf(t + 4, f01, side, 0));
+        if (!p) continue;
+        c.beginPath(); c.moveTo(p.x - 5 * u, p.y); c.lineTo(p.x + 5 * u, p.y); c.stroke();
+        c.textAlign = side < 0 ? "right" : "left";
+        c.fillText(fmtHz(hz).toUpperCase(), p.x + side * 9 * u, p.y);
+      }
+    }
+    // secondes à venir, au sol (ou au bas du tunnel)
+    c.textAlign = "left";
+    for (let s = 1; s <= 8; s++) {
+      const p = toScreen(worldOf(Math.ceil(t) + s, 0, 1, 0));
+      if (!p) continue;
+      c.beginPath(); c.moveTo(p.x - 4 * u, p.y); c.lineTo(p.x + 4 * u, p.y); c.stroke();
+      c.fillText(`+${(Math.ceil(t) + s - t).toFixed(1)} S`, p.x + 8 * u, p.y);
+    }
+    // lecture en haut, au centre
+    c.textAlign = "center";
+    c.fillText(`T ${fmtMs(t)}   Z ${(-t * S.speed).toFixed(1)}   ${Math.round(spec.fps)} FR/S   ${BANDS} BANDS`, W / 2, 22 * u);
+  }
+
+  if (!S.tracking) return;
+  // ── Suivi : les événements à venir, les plus forts en premier ──
+  const from = firstAfter(spec.peaks, t - 0.2), to = firstAfter(spec.peaks, t + FIXED.span * 0.85);
+  const seen = [];
+  for (let j = from; j < to; j++) {
+    const pk = spec.peaks[j];
+    const world = worldOf(pk.t, pk.f01, S.stereo ? pk.side : (pk.id % 2 ? 1 : -1), 0.8);
+    const p = toScreen(world);
+    if (!p || p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) continue;
+    const dist = camera.position.distanceTo(world);
+    // fondu : naît au loin, s'efface en passant la caméra
+    const k = (pk.t - t) / (FIXED.span * 0.85);
+    const fade = Math.min(1, Math.max(0, (1 - k) / 0.25)) * Math.min(1, Math.max(0, (pk.t - t + 0.2) / 0.5));
+    if (fade <= 0) continue;
+    seen.push({ pk, p, dist, fade, score: pk.v * (1.2 - k) });
+  }
+  // les plus forts, un peu favorisés quand ils sont proches
+  seen.sort((a, b) => b.score - a.score);
+  const shown = seen.slice(0, S.tags).sort((a, b) => a.pk.t - b.pk.t);
+
+  // liens : les événements reliés dans l'ordre du temps, en pointillés
+  if (S.links && shown.length > 1) {
+    c.setLineDash([3 * u, 4 * u]);
+    c.strokeStyle = inkA(0.35);
+    c.beginPath();
+    shown.forEach((s, j) => { if (j) c.lineTo(s.p.x, s.p.y); else c.moveTo(s.p.x, s.p.y); });
+    c.stroke();
+    c.setLineDash([]);
+  }
+
+  // les plus proches d'abord : ils prennent la meilleure place pour leur étiquette
+  const placed = [];
+  const overlaps = (x, y, w, h) => placed.some((q) => x < q.x + q.w && x + w > q.x && y < q.y + q.h && y + h > q.y);
+  for (const s of [...shown].sort((a, b) => a.dist - b.dist)) {
+    const { pk, p, dist, fade } = s;
+    const r = Math.max(6, Math.min(34, 120 / dist)) * u, e = r * 0.45;
+    c.globalAlpha = fade;
+    // crochets de visée
+    c.strokeStyle = inkA(0.9);
+    c.beginPath();
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      c.moveTo(p.x + sx * r, p.y + sy * (r - e)); c.lineTo(p.x + sx * r, p.y + sy * r); c.lineTo(p.x + sx * (r - e), p.y + sy * r);
+    }
+    c.stroke();
+    // étiquette en verre : petit carré, identifiant, fréquence, niveau au-dessus du fond
+    const text = `EV-${String(pk.id).padStart(4, "0")} · ${fmtHz(pk.hz)} · +${Math.round(pk.dB)} dB`.toUpperCase();
+    const tw = c.measureText(text).width, padX = 8 * u, sq = 4 * u, bw = tw + padX * 2 + sq + 7 * u, bh = 20 * u, gap = 4 * u;
+    // place libre : du côté extérieur d'abord, en montant puis en descendant ; sinon l'autre côté ; sinon pas d'étiquette
+    let spot = null;
+    const out = p.x < W / 2 ? -1 : 1;
+    for (const dir of [out, -out]) {
+      for (const n of [0, -1, 1, -2, 2, -3]) {
+        const lx = p.x + dir * (r + 18 * u), ly = p.y - r - 14 * u + n * (bh + gap);
+        let bx = dir > 0 ? lx : lx - bw;
+        bx = Math.max(8 * u, Math.min(W - bw - 8 * u, bx));
+        const by = Math.max(8 * u, Math.min(H - bh - 8 * u, ly - bh / 2));
+        if (!overlaps(bx, by, bw, bh)) { spot = { dir, bx, by, ax: dir > 0 ? bx : bx + bw }; break; }
+      }
+      if (spot) break;
+    }
+    if (!spot) continue;
+    placed.push({ x: spot.bx - gap, y: spot.by - gap, w: bw + 2 * gap, h: bh + 2 * gap });
+    const ly = spot.by + bh / 2;
+    // trait de rappel du coin des crochets vers l'étiquette
+    c.beginPath(); c.moveTo(p.x + spot.dir * r, p.y - r); c.lineTo(spot.ax, ly); c.stroke();
+    c.fillStyle = "rgba(190,190,190,0.72)";
+    c.beginPath(); c.roundRect(spot.bx, spot.by, bw, bh, 8 * u); c.fill();
+    c.fillStyle = "#000";
+    c.fillRect(spot.bx + padX, ly - sq / 2, sq, sq);
+    c.textAlign = "left";
+    c.fillText(text, spot.bx + padX + sq + 7 * u, ly + 0.5 * u);
+  }
+  c.globalAlpha = 1;
+}
 
 // ── Regard : glisser sur l'image ──
 let yaw = 0, pitch = 0, drag = null;
@@ -751,12 +912,20 @@ canvas.addEventListener("pointermove", (e) => {
 canvas.addEventListener("pointerup", () => { drag = null; });
 canvas.addEventListener("dblclick", () => { yaw = 0; pitch = 0; });
 
+// ── Composition pour les exports : le rendu, puis le calque de données ──
+const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
+function composite() {
+  comp.width = canvas.width; comp.height = canvas.height;
+  cctx.drawImage(canvas, 0, 0);
+  cctx.drawImage(overlay, 0, 0, comp.width, comp.height);
+}
+
 // ── Boucle ──
-let lastFrame = performance.now(), flowT = 0;
+let lastFrame = performance.now(), flowT = 0, seeking = false, recorder = null;
 function frame(nowMs) {
   const dt = Math.min(0.1, (nowMs - lastFrame) / 1000); lastFrame = nowMs;
   const t = now();
-  flowT += dt * S.flow;
+  flowT += dt * S.noise * 0.9;                      // la matière respire d'autant plus qu'elle est organique
   uniforms.uTime.value = t;
   uniforms.uFlowT.value = flowT;
   // la caméra avance avec le son, et dérive un peu comme un insecte
@@ -770,7 +939,10 @@ function frame(nowMs) {
   const dir = new THREE.Vector3(-Math.sin(ly) * Math.cos(lp), Math.sin(lp), -Math.cos(ly) * Math.cos(lp));
   camera.up.set(Math.sin(S.wander * 0.12 * Math.sin(wz * 0.13)), 1, 0).normalize();
   camera.lookAt(camera.position.clone().add(dir));
+  camera.updateMatrixWorld();
   composer.render(dt);
+  drawData(t);
+  if (recorder) composite();
   if (spec) {
     drawStrip(t);
     $("timeLabel").textContent = fmt(t);
@@ -790,14 +962,16 @@ function downloadBlob(blob, filename) {
 const baseName = () => `spectral-${(soundName || "sound").replace(/\.[^.]+$/, "")}-${fmt(now()).replace(":", "m")}s`;
 function exportPng() {
   composer.render(0);
-  canvas.toBlob((blob) => downloadBlob(blob, `${baseName()}.png`), "image/png");
+  drawData(now());
+  composite();
+  comp.toBlob((blob) => downloadBlob(blob, `${baseName()}.png`), "image/png");
 }
-let recorder = null;
 async function toggleRecord() {
   if (recorder) { recorder.stop(); return; }
   if (!audio.src) return;
   ensureAudioGraph();
-  const stream = canvas.captureStream(60);
+  composite();
+  const stream = comp.captureStream(60);
   for (const tr of streamDest.stream.getAudioTracks()) stream.addTrack(tr);
   const type = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((t) => MediaRecorder.isTypeSupported(t));
   const chunks = [];
@@ -821,19 +995,15 @@ audio.addEventListener("ended", () => { if (recorder) recorder.stop(); });
 $("panel").addEventListener("input", (e) => {
   if (e.target.id === "count") return;
   readState();
-  if (e.target.id === "events" || e.target.id === "evFloor") redrawStripSoon();
+  if (e.target.id === "events" || e.target.id === "sens") redrawStripSoon();
 });
 $("count").addEventListener("change", () => buildPoints(Math.round(parseFloat($("count").value) * 1000)));
-$("resSelect").addEventListener("change", runAnalysis);
 document.querySelectorAll(".palette").forEach((btn) => btn.addEventListener("click", () => {
-  const [a, b, c, f, e] = btn.dataset.colors.split(",");
-  $("c1").value = a; $("c2").value = b; $("c3").value = c; $("fogColor").value = f; $("evColor").value = e;
-  $("blend").value = btn.dataset.blend;
+  palette = btn.dataset.palette;
   readState();
 }));
 $("playBtn").addEventListener("click", togglePlay);
 $("rewindBtn").addEventListener("click", () => seekTo(0));
-let seeking = false;
 $("seek").addEventListener("input", () => { seeking = true; if (spec) seekTo(parseFloat($("seek").value) * spec.duration); });
 $("seek").addEventListener("change", () => { seeking = false; });
 $("loadBtn").addEventListener("click", () => $("fileInput").click());
@@ -867,15 +1037,17 @@ document.addEventListener("keydown", (e) => {
 // Réinitialiser : toutes les valeurs de la page au chargement
 const initial = Array.from(document.querySelectorAll("#panel input, #panel select")).map((el) => [el, el.type === "checkbox" ? el.checked : el.value]);
 $("resetBtn").addEventListener("click", () => {
-  const prevCount = $("count").value, prevRes = $("resSelect").value;
+  const prevCount = $("count").value;
   for (const [el, v] of initial) { if (el.type === "checkbox") el.checked = v; else el.value = v; }
   yaw = pitch = 0;
+  palette = "night";
   readState();
   redrawStripSoon();
   if ($("count").value !== prevCount) buildPoints(Math.round(parseFloat($("count").value) * 1000));
-  if ($("resSelect").value !== prevRes) runAnalysis();
 });
 
+// ?grid=1 : ouvre avec la grille technique
+if (new URLSearchParams(location.search).get("grid") === "1") $("grid").checked = true;
 resize();
 readState();
 buildPoints(Math.round(S.count * 1000));
