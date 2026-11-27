@@ -13,9 +13,9 @@
   --sans: "Replica Mono", monospace;
   --mono: "Replica Mono", monospace;
   --title: "Replica Mono", monospace;
-  --fs-text: 10px;
-  --fs-small: 9px;
-  --fs-mono: 9px;
+  --fs-text: 13px;
+  --fs-small: 12px;
+  --fs-mono: 12px;
   --glass: rgba(10, 10, 12, 0.32);
   --blur: 14px;
   --text: #fff;
@@ -25,7 +25,7 @@
   --pill: rgba(255, 255, 255, 0.08);
   --ink: #fff;
   --ink-faint: rgba(255, 255, 255, 0.25);
-  --pad: 8px;
+  --pad: 10px;
 }
 html, body { background: #000; }
 
@@ -47,9 +47,9 @@ html, body { background: #000; }
   position: fixed;
   top: 0;
   left: 0;
-  width: 228px;
-  margin: 8px;
-  max-height: calc(100vh - 16px);
+  width: 296px;
+  margin: 10px;
+  max-height: calc(100vh - 20px);
   line-height: 1.25;
   transition: opacity 0.3s cubic-bezier(0.4, 0, 0, 1), transform 0.6s cubic-bezier(0.4, 0, 0, 1), visibility 0.6s;
 }
@@ -63,8 +63,8 @@ body.panel-hidden #panel {
 #panelHead {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px var(--pad);
+  gap: 10px;
+  padding: 8px var(--pad);
 }
 #panelHead .backLink { color: inherit; text-decoration: none; }
 #miniTitle {
@@ -76,8 +76,8 @@ body.panel-hidden #panel {
 }
 #panel #foldBtn {
   min-height: 0;
-  width: 18px;
-  height: 16px;
+  width: 23px;
+  height: 21px;
   padding: 0;
   line-height: 1;
   background: none;
@@ -85,50 +85,50 @@ body.panel-hidden #panel {
 
 /* Sections serrées */
 .section {
-  gap: 4px;
-  padding: 0 var(--pad) 7px;
+  gap: 5px;
+  padding: 0 var(--pad) 9px;
 }
-.section > h2 { padding: 5px var(--pad); }
-.row { column-gap: 6px; }
+.section > h2 { padding: 6px var(--pad); }
+.row { column-gap: 8px; }
 .row:has(> output) { grid-template-columns: 38% minmax(0, 1fr) 3.4em; }
-.row:has(> .pills) { row-gap: 4px; }
-input[type="range"] { height: 12px; }
-input[type="range"]::-webkit-slider-thumb { width: 7px; height: 7px; margin-top: -3px; }
-input[type="range"]::-moz-range-thumb { width: 7px; height: 7px; }
-input[type="checkbox"] { width: 22px; height: 12px; }
-input[type="checkbox"]::after { top: 2px; left: 2px; width: 8px; height: 8px; }
-input[type="checkbox"]:checked::after { transform: translateX(10px); background: #000; }
+.row:has(> .pills) { row-gap: 5px; }
+input[type="range"] { height: 16px; }
+input[type="range"]::-webkit-slider-thumb { width: 9px; height: 9px; margin-top: -4px; }
+input[type="range"]::-moz-range-thumb { width: 9px; height: 9px; }
+input[type="checkbox"] { width: 29px; height: 16px; }
+input[type="checkbox"]::after { top: 2px; left: 2px; width: 12px; height: 12px; }
+input[type="checkbox"]:checked::after { transform: translateX(13px); background: #000; }
 
 /* Boutons : petites pilules ; le choix actif est blanc, son texte noir */
 #panel button {
-  min-height: 20px;
-  padding: 1px 8px;
+  min-height: 26px;
+  padding: 1px 10px;
 }
 #panel #transport button,
 #panel .pills button {
-  min-height: 20px;
-  padding: 1px 6px;
+  min-height: 26px;
+  padding: 1px 8px;
 }
 .pills button[aria-pressed="true"],
 #palettes .palette[aria-pressed="true"] {
   background: var(--ink) !important;
   color: #000 !important;
 }
-#transport svg { width: 8px; height: 8px; }
+#transport svg { width: 10px; height: 10px; }
 
 /* Export : le vert reste pour l'action principale, en petit */
 #exportRow #exportBtn {
-  min-height: 22px;
+  min-height: 29px;
   color: #000;
 }
-#exportRow > button { min-height: 22px; }
+#exportRow > button { min-height: 29px; }
 #recordBtn.recording { background: #ff3b1f !important; color: #fff !important; }
 
 /* Spectrogramme 2D du fichier entier, tête de lecture, clic pour se déplacer */
 #strip {
   display: block;
   width: 100%;
-  height: 54px;
+  height: 70px;
   background: #000;
   cursor: pointer;
 }
@@ -145,8 +145,8 @@ input[type="checkbox"]:checked::after { transform: translateX(10px); background:
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 5px var(--pad);
+  gap: 8px;
+  padding: 7px var(--pad);
   border-top: 1px dashed var(--dash);
 }
 #panelFooter button { background: none !important; padding: 0 !important; min-height: 0 !important; }

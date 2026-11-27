@@ -362,6 +362,29 @@ async function analyse(buffer, N) {
     bucket.get(key).push(p);
     if (peaks.length >= 6000) break;
   }
+  // étendue de chaque événement : la zone d'un seul tenant autour du pic, tant que la saillance
+  // reste au-dessus de 40 % du pic (bornée à ±2 s et ±60 bandes) → début, fin, fréquences basse et haute
+  const maxDf = Math.round(fps * 2), maxDb = 60;
+  for (const p of peaks) {
+    const thr = Math.max(0.1, p.v * 0.4);
+    let f0 = p.f, f1 = p.f, b0 = p.b, b1 = p.b, count = 0;
+    const start = p.f * BANDS + p.b, stack = [start], seen = new Set([start]);
+    while (stack.length && count < 6000) {
+      const i = stack.pop(); count++;
+      const f = (i / BANDS) | 0, b = i % BANDS;
+      if (f < f0) f0 = f; if (f > f1) f1 = f; if (b < b0) b0 = b; if (b > b1) b1 = b;
+      for (const [df, dbd] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const ff = f + df, bb = b + dbd;
+        if (ff < 0 || ff >= frames || bb < 0 || bb >= BANDS) continue;
+        if (Math.abs(ff - p.f) > maxDf || Math.abs(bb - p.b) > maxDb) continue;
+        const j = ff * BANDS + bb;
+        if (seen.has(j) || sal[j] < thr) continue;
+        seen.add(j); stack.push(j);
+      }
+    }
+    p.t0 = f0 / fps; p.t1 = (f1 + 1) / fps;
+    p.lo = b0 / (BANDS - 1); p.hi = b1 / (BANDS - 1);
+  }
   peaks.sort((a, b) => a.t - b.t);
   peaks.forEach((p, j) => { p.id = j + 1; });
 
@@ -782,21 +805,42 @@ const toScreen = (v) => {
 const firstAfter = (arr, t) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].t < t) lo = m + 1; else hi = m; } return lo; };
 const fmtHz = (hz) => hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 1 : 2)} kHz` : `${Math.round(hz)} Hz`;
 
+// verre dépoli sur le calque : on recopie la zone du rendu derrière, floutée, puis un voile sombre
+// (le calque est un canvas à part : backdrop-filter n'y existe pas, on le fabrique)
+function glass(c, x, y, w, h, rad) {
+  const u = PR, m = 10 * u;
+  c.save();
+  c.beginPath(); c.roundRect(x, y, w, h, rad); c.clip();
+  c.filter = `blur(${7 * u}px)`;
+  const sx = Math.max(0, x - m), sy = Math.max(0, y - m);
+  const sw = Math.min(canvas.width - sx, w + 2 * m), sh = Math.min(canvas.height - sy, h + 2 * m);
+  if (sw > 0 && sh > 0) c.drawImage(canvas, sx, sy, sw, sh, sx, sy, sw, sh);
+  c.filter = "none";
+  c.fillStyle = "rgba(255,255,255,0.16)";           // voile clair : du verre dépoli sur le noir
+  c.fillRect(x, y, w, h);
+  c.restore();
+  c.save();
+  c.strokeStyle = "rgba(255,255,255,0.28)";
+  c.lineWidth = 0.75 * u;
+  c.beginPath(); c.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, rad); c.stroke();
+  c.restore();
+}
+
 function drawData(t) {
   const c = octx, W = overlay.width, H = overlay.height, u = PR;
   c.clearRect(0, 0, W, H);
   if (!spec || (!S.tracking && !S.grid)) return;
-  // traits fins, petit texte en mono, peu d'opacité : la donnée se devine plus qu'elle ne s'impose
-  c.lineWidth = 0.75 * u;
-  c.font = `${9.5 * u}px "Replica Mono", monospace`;
+  // traits fins en blanc, texte en Replica Mono
+  c.lineWidth = 0.8 * u;
+  c.font = `${11 * u}px "Replica Mono", monospace`;
   c.textBaseline = "middle";
-  const inkA = (a) => ink === "#ffffff" ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
+  const white = (a) => `rgba(255,255,255,${a})`;
 
   // ── Grille : graduations de fréquence sur la paroi, secondes au sol, réticule, lecture ──
   if (S.grid) {
-    c.strokeStyle = inkA(0.18); c.fillStyle = inkA(0.4);
+    c.strokeStyle = white(0.35); c.fillStyle = white(0.6);
     // réticule au centre
-    const cx = W / 2, cy = H / 2, g = 5 * u, l = 7 * u;
+    const cx = W / 2, cy = H / 2, g = 5 * u, l = 8 * u;
     c.beginPath();
     c.moveTo(cx - g - l, cy); c.lineTo(cx - g, cy); c.moveTo(cx + g, cy); c.lineTo(cx + g + l, cy);
     c.moveTo(cx, cy - g - l); c.lineTo(cx, cy - g); c.moveTo(cx, cy + g); c.lineTo(cx, cy + g + l);
@@ -832,7 +876,8 @@ function drawData(t) {
   const seen = [];
   for (let j = from; j < to; j++) {
     const pk = spec.peaks[j];
-    const world = worldOf(pk.t, pk.f01, S.stereo ? pk.side : (pk.id % 2 ? 1 : -1), 0.8);
+    const side = S.stereo ? pk.side : (pk.id % 2 ? 1 : -1);
+    const world = worldOf(pk.t, pk.f01, side, 0.8);
     const p = toScreen(world);
     if (!p || p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) continue;
     const dist = camera.position.distanceTo(world);
@@ -840,18 +885,39 @@ function drawData(t) {
     const k = (pk.t - t) / (FIXED.span * 0.85);
     const fade = Math.min(1, Math.max(0, (1 - k) / 0.25)) * Math.min(1, Math.max(0, (pk.t - t + 0.2) / 0.5));
     if (fade <= 0) continue;
-    seen.push({ pk, p, dist, fade, score: pk.v * (1.2 - k) });
+    // cadre : toute la zone de l'événement (début → fin, fréquence basse → haute), projetée à l'écran
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const tNear = t + 0.25;                          // ce qui est déjà passé ne tire pas le cadre hors de l'écran
+    for (const tt of [pk.t0, (pk.t0 + pk.t1) / 2, pk.t1]) {
+      for (const ff of [pk.lo, (pk.lo + pk.hi) / 2, pk.hi]) {
+        const q = toScreen(worldOf(Math.max(tt, tNear), ff, side, 0.8));
+        if (!q) continue;
+        x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y);
+      }
+    }
+    if (!isFinite(x0)) { x0 = x1 = p.x; y0 = y1 = p.y; }
+    // marge autour de la zone, taille minimale, et pas plus qu'une moitié d'écran
+    const pad = 6 * u, minS = 10 * u;
+    x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+    if (x1 - x0 < minS) { const m = (x0 + x1) / 2; x0 = m - minS / 2; x1 = m + minS / 2; }
+    if (y1 - y0 < minS) { const m = (y0 + y1) / 2; y0 = m - minS / 2; y1 = m + minS / 2; }
+    x0 = Math.max(x0, p.x - W * 0.25); x1 = Math.min(x1, p.x + W * 0.25);
+    y0 = Math.max(y0, p.y - H * 0.25); y1 = Math.min(y1, p.y + H * 0.25);
+    seen.push({ pk, p, dist, fade, box: { x0, y0, x1, y1 }, score: pk.v * (1.2 - k) });
   }
   // les plus forts, un peu favorisés quand ils sont proches
   seen.sort((a, b) => b.score - a.score);
   const shown = seen.slice(0, S.tags).sort((a, b) => a.pk.t - b.pk.t);
 
-  // liens : les événements reliés dans l'ordre du temps, en pointillés
+  // liens : les centres des événements reliés dans l'ordre du temps, en pointillés
   if (S.links && shown.length > 1) {
-    c.setLineDash([1 * u, 4 * u]);
-    c.strokeStyle = inkA(0.18);
+    c.setLineDash([2 * u, 4 * u]);
+    c.strokeStyle = white(0.35);
     c.beginPath();
-    shown.forEach((s, j) => { if (j) c.lineTo(s.p.x, s.p.y); else c.moveTo(s.p.x, s.p.y); });
+    shown.forEach((s, j) => {
+      const mx = (s.box.x0 + s.box.x1) / 2, my = (s.box.y0 + s.box.y1) / 2;
+      if (j) c.lineTo(mx, my); else c.moveTo(mx, my);
+    });
     c.stroke();
     c.setLineDash([]);
   }
@@ -860,41 +926,44 @@ function drawData(t) {
   const placed = [];
   const overlaps = (x, y, w, h) => placed.some((q) => x < q.x + q.w && x + w > q.x && y < q.y + q.h && y + h > q.y);
   for (const s of [...shown].sort((a, b) => a.dist - b.dist)) {
-    const { pk, p, dist, fade } = s;
-    const r = Math.max(4, Math.min(14, 60 / dist)) * u, e = Math.min(r * 0.5, 4 * u);
+    const { pk, fade, box } = s;
+    const bw0 = box.x1 - box.x0, bh0 = box.y1 - box.y0;
+    const e = Math.max(3 * u, Math.min(10 * u, bw0 * 0.25, bh0 * 0.25));
     c.globalAlpha = fade;
-    // crochets de visée : quatre petits coins
-    c.strokeStyle = inkA(0.55);
+    // cadre de visée : quatre coins autour de toute la zone
+    c.strokeStyle = white(0.85);
     c.beginPath();
-    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      c.moveTo(p.x + sx * r, p.y + sy * (r - e)); c.lineTo(p.x + sx * r, p.y + sy * r); c.lineTo(p.x + sx * (r - e), p.y + sy * r);
+    for (const [cx, cy, sx, sy] of [[box.x0, box.y0, 1, 1], [box.x1, box.y0, -1, 1], [box.x1, box.y1, -1, -1], [box.x0, box.y1, 1, -1]]) {
+      c.moveTo(cx, cy + sy * e); c.lineTo(cx, cy); c.lineTo(cx + sx * e, cy);
     }
     c.stroke();
-    // texte seul, sans fond : identifiant, fréquence, niveau au-dessus du fond
+    // étiquette en verre : identifiant, fréquence, niveau au-dessus du fond
     const text = `${String(pk.id).padStart(4, "0")}  ${fmtHz(pk.hz)}  +${Math.round(pk.dB)}dB`;
-    const tw = c.measureText(text).width, bh = 11 * u, gap = 3 * u;
+    const padX = 7 * u, tw = c.measureText(text).width, bw = tw + 2 * padX, bh = 18 * u, gap = 4 * u;
     // place libre : du côté extérieur d'abord, en montant puis en descendant ; sinon l'autre côté ; sinon rien
     let spot = null;
-    const out = p.x < W / 2 ? -1 : 1;
+    const out = (box.x0 + box.x1) / 2 < W / 2 ? -1 : 1;
     for (const dir of [out, -out]) {
       for (const n of [0, -1, 1, -2, 2]) {
-        const lx = p.x + dir * (r + 8 * u), ly = p.y - r - 6 * u + n * (bh + gap);
-        let bx = dir > 0 ? lx : lx - tw;
-        bx = Math.max(8 * u, Math.min(W - tw - 8 * u, bx));
+        const ex = dir > 0 ? box.x1 : box.x0;
+        const lx = ex + dir * 12 * u, ly = box.y0 - 6 * u + n * (bh + gap);
+        let bx = dir > 0 ? lx : lx - bw;
+        bx = Math.max(8 * u, Math.min(W - bw - 8 * u, bx));
         const by = Math.max(8 * u, Math.min(H - bh - 8 * u, ly - bh / 2));
-        if (!overlaps(bx, by, tw, bh)) { spot = { dir, bx, by, ax: dir > 0 ? bx - 2 * u : bx + tw + 2 * u }; break; }
+        if (!overlaps(bx, by, bw, bh)) { spot = { ex, bx, by, ax: dir > 0 ? bx : bx + bw }; break; }
       }
       if (spot) break;
     }
     if (!spot) continue;
-    placed.push({ x: spot.bx - gap, y: spot.by - gap, w: tw + 2 * gap, h: bh + 2 * gap });
+    placed.push({ x: spot.bx - gap, y: spot.by - gap, w: bw + 2 * gap, h: bh + 2 * gap });
     const ly = spot.by + bh / 2;
-    // trait de rappel, très fin
-    c.strokeStyle = inkA(0.3);
-    c.beginPath(); c.moveTo(p.x + spot.dir * r, p.y - r); c.lineTo(spot.ax, ly); c.stroke();
-    c.fillStyle = inkA(0.65);
+    // trait de rappel, du coin haut du cadre à l'étiquette
+    c.strokeStyle = white(0.55);
+    c.beginPath(); c.moveTo(spot.ex, box.y0); c.lineTo(spot.ax, ly); c.stroke();
+    glass(c, spot.bx, spot.by, bw, bh, 6 * u);
+    c.fillStyle = white(0.92);
     c.textAlign = "left";
-    c.fillText(text, spot.bx, ly);
+    c.fillText(text, spot.bx + padX, ly + 0.5 * u);
   }
   c.globalAlpha = 1;
 }
