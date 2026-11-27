@@ -168,6 +168,56 @@ input[type="checkbox"]:checked::after { transform: translateX(13px); background:
 #panelFooter button { background: none !important; padding: 0 !important; min-height: 0 !important; }
 #panelFooter .keys { opacity: 0.5; }
 
+/* ── Intro : noir plein écran, texte tapé à la machine, puis fondu ── */
+#intro {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background: #000;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 1.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+#intro.out { opacity: 0; pointer-events: none; }
+#introText {
+  margin: 0;
+  min-height: 3.2em;
+  font-size: 20px;
+  line-height: 1.6;
+  text-transform: none;
+  white-space: pre;
+  transition: opacity 1s ease;
+}
+#introText.gone { opacity: 0; }
+/* curseur qui clignote au bout du texte */
+#introText::after {
+  content: "";
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: #fff;
+  animation: introBlink 1s steps(1) infinite;
+}
+@keyframes introBlink { 50% { opacity: 0; } }
+#introHint {
+  margin: 0;
+  font-size: var(--fs-small);
+  opacity: 0.5;
+}
+/* pendant l'intro, le panneau attend ; il apparaît ensuite en fondu */
+body.intro #panel { opacity: 0; visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  #intro, #introText { transition: none; }
+  #introText::after { animation: none; }
+}
+
 /* Fenêtre RGPD : fond blanc, donc texte et filets noirs */
 dialog {
   --text: #000;

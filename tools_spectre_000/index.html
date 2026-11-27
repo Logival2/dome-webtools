@@ -22,6 +22,12 @@
 <canvas id="overlay"></canvas>
 <p id="status" class="mono">Loading…</p>
 
+<!-- Intro : le lieu et la date s'écrivent sur le noir, puis fondu vers le travelling -->
+<div id="intro" hidden>
+  <p id="introText"></p>
+  <p id="introHint" hidden>Click to enter</p>
+</div>
+
 <!-- Panneau latéral (paramètres)
      Principe : le spectrogramme du son (temps × fréquence) devient un espace en 3D.
      Le temps est la profondeur : la caméra avance dans le son au rythme de la lecture.
@@ -81,7 +87,7 @@
         <option value="0">Tunnel</option>
         <option value="1">Canopy</option>
         <option value="2">Terrain</option>
-        <option value="3">Hybrid</option>
+        <option value="3" selected>Hybrid</option>
       </select>
     </div>
     <div class="row"><label for="radius" title="Size of the space around the camera">Radius</label><input id="radius" type="range" min="0.5" max="10" step="0.05" value="3" /></div>
@@ -791,6 +797,7 @@ async function runAnalysis() {
     $("durLabel").textContent = fmt(spec.duration);
     $("soundInfo").textContent = `${soundName} · ${spec.channels.layout.name} · ${spec.peaks.length.toLocaleString("en")} anomalies`;
     setStatus("");
+    soundReadyResolve(true);                       // l'intro peut laisser place au travelling
     // ?t=42 : ouvre la page à 42 s du son
     const askedT = parseFloat(new URLSearchParams(location.search).get("t"));
     if (askedT > 0 && audio.currentTime === 0) { audio.currentTime = askedT; syncClock(); }
@@ -813,6 +820,7 @@ async function loadDefault() {
     await loadSound(await res.arrayBuffer(), "FILE8654_5.0.flac", url);
   } catch {
     setStatus("Drop a sound file on the image, or use Load sound.");
+    soundReadyResolve(false);
   }
 }
 
@@ -1317,11 +1325,72 @@ $("resetBtn").addEventListener("click", () => {
 
 // ?grid=1 : ouvre avec la grille technique
 if (new URLSearchParams(location.search).get("grid") === "1") $("grid").checked = true;
+// ── Intro : le lieu et la date s'écrivent sur le noir, fondu au noir, puis le travelling démarre ──
+// Un clic (ou une touche) passe l'intro et débloque le son ; ?t=… ou ?intro=0 la sautent.
+const INTRO_LINES = ["Maripasoula, Guyane française : 3,6417° N, 54,0333° O", "Avril 2025"];
+let soundReadyResolve;
+const soundReady = new Promise((r) => { soundReadyResolve = r; });
+const introParams = new URLSearchParams(location.search);
+const introOn = !introParams.has("t") && introParams.get("intro") !== "0";
+let introSkip = false, introGesture = null;
+const introEl = $("intro"), introText = $("introText");
+// attente que l'on peut écourter d'un clic
+const introWait = (ms) => new Promise((r) => {
+  const id = setTimeout(r, introSkip ? 0 : ms);
+  const check = setInterval(() => { if (introSkip) { clearTimeout(id); clearInterval(check); r(); } }, 30);
+  setTimeout(() => clearInterval(check), ms + 50);
+});
+// le son démarre-t-il sans geste de l'utilisateur ? (les navigateurs le refusent souvent)
+async function tryStart() {
+  ensureAudioGraph();
+  await Promise.race([actx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 400))]);
+  if (actx.state !== "running") throw new Error("blocked");
+  audio.currentTime = 0;
+  await audio.play();
+}
+async function runIntro() {
+  document.body.classList.add("intro");
+  introEl.hidden = false;
+  // le geste débloque le son tout de suite (le navigateur ne l'accepte que pendant le clic lui-même)
+  const skip = () => { introSkip = true; ensureAudioGraph(); actx.resume().catch(() => {}); introGesture?.(); };
+  introEl.addEventListener("click", skip);
+  document.addEventListener("keydown", skip, { once: true });
+  // texte tapé à la machine
+  for (let li = 0; li < INTRO_LINES.length; li++) {
+    if (li) { introText.textContent += "\n"; await introWait(650); }
+    for (const ch of INTRO_LINES[li]) {
+      if (introSkip) { introText.textContent = INTRO_LINES.join("\n"); break; }
+      introText.textContent += ch;
+      await introWait(ch === " " ? 25 : 55 + Math.random() * 45);
+    }
+    if (introSkip) break;
+  }
+  await introWait(1800);
+  const ok = await soundReady;                      // le texte reste tant que le son n'est pas analysé
+  // fondu au noir du texte
+  introText.classList.add("gone");
+  await new Promise((r) => setTimeout(r, 1000));
+  if (ok) {
+    try { await tryStart(); }
+    catch {
+      // son bloqué : on attend un clic sur le noir
+      $("introHint").hidden = false;
+      await new Promise((r) => { introGesture = r; if (introSkip) r(); });
+      $("introHint").hidden = true;
+      try { await tryStart(); } catch {}
+    }
+  }
+  // fondu d'ouverture sur le travelling, puis le panneau
+  introEl.classList.add("out");
+  setTimeout(() => { document.body.classList.remove("intro"); introEl.hidden = true; }, 1800);
+}
+
 resize();
 readState();
 buildPoints(Math.round(S.count * 1000));
 requestAnimationFrame(frame);
 loadDefault();
+if (introOn) runIntro();
 </script>
 </body>
 </html>
