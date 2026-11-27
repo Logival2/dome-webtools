@@ -1099,9 +1099,8 @@ function drawData(t) {
     }
     c.stroke();
     // étiquette en verre : identifiant, fréquence, niveau au-dessus du fond
-    // avec plus de deux canaux, on ajoute la direction d'où vient le son (0° = devant, négatif = à gauche)
-    const azTxt = spec.channels.C > 2 ? `  ${pk.az > 0 ? "+" : ""}${pk.az}°` : "";
-    const text = `${String(pk.id).padStart(4, "0")}  ${fmtHz(pk.hz)}  +${Math.round(pk.dB)}dB${azTxt}`;
+    // une seule donnée par anomalie : son numéro (fréquence, niveau et direction restent dans spec.peaks)
+    const text = String(pk.id).padStart(4, "0");
     const padX = 7 * u, tw = c.measureText(text).width, bw = tw + 2 * padX, bh = 18 * u, gap = 4 * u;
     // place libre : du côté extérieur d'abord, en montant puis en descendant ; sinon l'autre côté ; sinon rien
     let spot = null;
