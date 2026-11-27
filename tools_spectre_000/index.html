@@ -837,14 +837,14 @@ function drawData(t) {
   c.clearRect(0, 0, W, H);
   if (!spec || (!S.tracking && !S.grid)) return;
   // traits fins en blanc, texte en Replica Mono
-  c.lineWidth = 0.8 * u;
+  c.lineWidth = 1.2 * u;
   c.font = `${11 * u}px "Replica Mono", monospace`;
   c.textBaseline = "middle";
   const white = (a) => `rgba(255,255,255,${a})`;
 
   // ── Grille : graduations de fréquence sur la paroi, secondes au sol, réticule, lecture ──
   if (S.grid) {
-    c.strokeStyle = white(0.35); c.fillStyle = white(0.6);
+    c.strokeStyle = white(0.6); c.fillStyle = white(0.85);
     // réticule au centre
     const cx = W / 2, cy = H / 2, g = 5 * u, l = 8 * u;
     c.beginPath();
@@ -918,7 +918,7 @@ function drawData(t) {
   // liens : les centres des événements reliés dans l'ordre du temps, en pointillés
   if (S.links && shown.length > 1) {
     c.setLineDash([2 * u, 4 * u]);
-    c.strokeStyle = white(0.35);
+    c.strokeStyle = white(0.6);
     c.beginPath();
     shown.forEach((s, j) => {
       const mx = (s.box.x0 + s.box.x1) / 2, my = (s.box.y0 + s.box.y1) / 2;
@@ -937,7 +937,7 @@ function drawData(t) {
     const e = Math.max(3 * u, Math.min(10 * u, bw0 * 0.25, bh0 * 0.25));
     c.globalAlpha = fade;
     // cadre de visée : quatre coins autour de toute la zone
-    c.strokeStyle = white(0.85);
+    c.strokeStyle = white(1);
     c.beginPath();
     for (const [cx, cy, sx, sy] of [[box.x0, box.y0, 1, 1], [box.x1, box.y0, -1, 1], [box.x1, box.y1, -1, -1], [box.x0, box.y1, 1, -1]]) {
       c.moveTo(cx, cy + sy * e); c.lineTo(cx, cy); c.lineTo(cx + sx * e, cy);
@@ -964,7 +964,7 @@ function drawData(t) {
     placed.push({ x: spot.bx - gap, y: spot.by - gap, w: bw + 2 * gap, h: bh + 2 * gap });
     const ly = spot.by + bh / 2;
     // trait de rappel, du coin haut du cadre à l'étiquette
-    c.strokeStyle = white(0.55);
+    c.strokeStyle = white(0.85);
     c.beginPath(); c.moveTo(spot.ex, box.y0); c.lineTo(spot.ax, ly); c.stroke();
     glass(c, spot.bx, spot.by, bw, bh, 6 * u);
     c.fillStyle = white(0.92);
