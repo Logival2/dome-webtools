@@ -5,3 +5,6 @@ Sources/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Outils de développement
+.impeccable/
