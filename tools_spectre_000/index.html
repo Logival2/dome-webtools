@@ -4,10 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Spectral travel</title>
-<!-- interface commune des outils (verre, typo, sliders), puis la mise en page propre à l'outil -->
-<link rel="stylesheet" href="../ui/ui_001.css" />
+<!-- interface commune des outils (verre, typo, sliders), copiée dans le dossier de l'outil pour qu'il s'ouvre seul, puis la mise en page propre à l'outil -->
+<link rel="stylesheet" href="ui/ui_001.css" />
 <link rel="stylesheet" href="style.css" />
-<script defer src="../ui/ui_001.js"></script>
+<script defer src="ui/ui_001.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
@@ -43,7 +43,9 @@
         <option value="4096">Fine</option>
       </select>
     </div>
-    <div class="row"><label for="floor" title="Quieter parts of the spectrum vanish">Threshold</label><input id="floor" type="range" min="0" max="0.95" step="0.01" value="0.38" /></div>
+    <div class="row"><label for="events" title="0 = the raw spectrogram · 1 = only what stands out from the background noise (calls, cries, clicks)">Events</label><input id="events" type="range" min="0" max="1" step="0.01" value="0.7" /></div>
+    <div class="row"><label for="evFloor" title="How far above the background a sound must rise to count as an event">Event from</label><input id="evFloor" type="range" min="0" max="0.8" step="0.01" value="0.1" /></div>
+    <div class="row"><label for="floor" title="Quieter parts of the raw spectrum vanish">Threshold</label><input id="floor" type="range" min="0" max="0.95" step="0.01" value="0.38" /></div>
     <div class="row"><label for="gain" title="Boost of what remains">Gain</label><input id="gain" type="range" min="0.2" max="4" step="0.01" value="1.6" /></div>
     <div class="row"><label for="contrast" title="Above 1: only the loudest peaks stay">Contrast</label><input id="contrast" type="range" min="0.3" max="3" step="0.01" value="1.2" /></div>
     <label class="check"><input id="stereo" type="checkbox" checked /><span>Stereo · left and right apart</span></label>
@@ -106,15 +108,17 @@
       <label>Mid<input id="c2" type="color" value="#2e6cff" /></label>
       <label>High<input id="c3" type="color" value="#dcefff" /></label>
       <label>Fog<input id="fogColor" type="color" value="#000000" /></label>
+      <label>Event<input id="evColor" type="color" value="#ff9a2e" /></label>
     </div>
     <div class="btnRow">
-      <button class="palette" type="button" data-colors="#0b1d5c,#2e6cff,#dcefff,#000000" data-blend="add">Night</button>
-      <button class="palette" type="button" data-colors="#062417,#1fa36a,#d2ffe0,#000000" data-blend="add">Moss</button>
-      <button class="palette" type="button" data-colors="#3a0d00,#ff6a1a,#ffe5b8,#000000" data-blend="add">Ember</button>
-      <button class="palette" type="button" data-colors="#5c1f06,#c9661d,#f4c27c,#f2e8d6" data-blend="normal">Haze</button>
-      <button class="palette" type="button" data-colors="#25106b,#ff2d6b,#ffd3e2,#05020b" data-blend="add">Pigment</button>
-      <button class="palette" type="button" data-colors="#222222,#9a9a9a,#ffffff,#000000" data-blend="add">Grey</button>
+      <button class="palette" type="button" data-colors="#0b1d5c,#2e6cff,#dcefff,#000000,#ff9a2e" data-blend="add">Night</button>
+      <button class="palette" type="button" data-colors="#062417,#1fa36a,#d2ffe0,#000000,#ff4fd2" data-blend="add">Moss</button>
+      <button class="palette" type="button" data-colors="#3a0d00,#ff6a1a,#ffe5b8,#000000,#7fd4ff" data-blend="add">Ember</button>
+      <button class="palette" type="button" data-colors="#5c1f06,#c9661d,#f4c27c,#f2e8d6,#1238ff" data-blend="normal">Haze</button>
+      <button class="palette" type="button" data-colors="#25106b,#ff2d6b,#ffd3e2,#05020b,#fff04a" data-blend="add">Pigment</button>
+      <button class="palette" type="button" data-colors="#222222,#9a9a9a,#ffffff,#000000,#ff3b1f" data-blend="add">Grey</button>
     </div>
+    <div class="row"><label for="highlight" title="Events take the event colour, grow and brighten">Highlight</label><input id="highlight" type="range" min="0" max="2" step="0.01" value="1" /></div>
     <div class="row">
       <label for="blend">Blend</label>
       <select id="blend" class="asPills">
@@ -297,35 +301,76 @@ async function analyse(buffer, N) {
   sample.sort((a, b) => a - b);
   const top = sample[Math.floor(sample.length * 0.995)], range = 72, bottom = top - range;
 
-  // texture : chaque ligne range K images de BANDS bandes ; R gauche, V droite, B attaques, A volume
+  // niveaux 0…1 : gauche, droite, moyenne
+  const n = frames * BANDS;
+  const vL = new Float32Array(n), vR = new Float32Array(n), vM = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    vL[i] = Math.min(1, Math.max(0, (db[0][i] - bottom) / range));
+    vR[i] = Math.min(1, Math.max(0, (db[1][i] - bottom) / range));
+    vM[i] = (vL[i] + vR[i]) / 2;
+  }
+
+  // ── Événements : ce qui sort du bruit de fond ──
+  // Pour chaque bande, on mesure son niveau habituel (moyenne glissante sur ~3 s) et son agitation
+  // habituelle (écart moyen à ce niveau). La nappe continue (chœur d'insectes, pluie) a un niveau haut
+  // mais stable ; le vent dans les graves est agité. Un cri d'animal sort nettement des deux :
+  // saillance = niveau − habituel − 2 × agitation. Aller et retour dans le temps : rien ne traîne.
+  setStatus("Separating events from the background…");
+  await new Promise((r) => setTimeout(r));
+  const fps = sr / hop;
+  const k = 1 / (fps * 3);
+  const smooth2 = (src, out) => {                    // lissage exponentiel aller + retour, par bande
+    const tmp = new Float32Array(frames);
+    for (let b = 0; b < BANDS; b++) {
+      let g = src[b];
+      for (let f = 0; f < frames; f++) { g += (src[f * BANDS + b] - g) * k; tmp[f] = g; }
+      g = src[(frames - 1) * BANDS + b];
+      for (let f = frames - 1; f >= 0; f--) { g += (src[f * BANDS + b] - g) * k; out[f * BANDS + b] = (g + tmp[f]) / 2; }
+    }
+  };
+  const mean = new Float32Array(n), dev = new Float32Array(n), absd = new Float32Array(n);
+  smooth2(vM, mean);
+  for (let i = 0; i < n; i++) absd[i] = Math.abs(vM[i] - mean[i]);
+  smooth2(absd, dev);
+  // ~22 dB au-dessus du seuil = saillance pleine
+  const salRaw = new Float32Array(n);
+  for (let i = 0; i < n; i++) salRaw[i] = Math.min(1, Math.max(0, (vM[i] - mean[i] - 2 * dev[i] - 0.02) / 0.3));
+  // léger flou 3 × 3 (temps × fréquence) : les cris restent nets, le moucheté du bruit s'efface
+  const sal = new Float32Array(n);
+  for (let f = 0; f < frames; f++) for (let b = 0; b < BANDS; b++) {
+    let s = 0, w = 0;
+    for (let df = -1; df <= 1; df++) for (let dbd = -1; dbd <= 1; dbd++) {
+      const ff = f + df, bb = b + dbd;
+      if (ff < 0 || ff >= frames || bb < 0 || bb >= BANDS) continue;
+      const k = (df === 0 ? 2 : 1) * (dbd === 0 ? 2 : 1);
+      s += salRaw[ff * BANDS + bb] * k; w += k;
+    }
+    sal[f * BANDS + b] = s / w;
+  }
+
+  // texture : chaque ligne range K images de BANDS bandes ; R gauche, V droite, B attaques, A événements
   const maxTex = renderer.capabilities.maxTextureSize;
   const K = Math.max(1, Math.floor(Math.min(maxTex, 16384) / BANDS));
   const texW = K * BANDS, texH = Math.ceil(frames / K);
   if (texH > maxTex) throw new Error("Sound too long for this graphics card");
   const data = new Uint8Array(texW * texH * 4);
-  const mono = new Uint8Array(frames * BANDS);
+  const mono = new Uint8Array(n), events = new Uint8Array(n);
   const prev = new Float32Array(BANDS);
   for (let f = 0; f < frames; f++) {
     const row = Math.floor(f / K), col0 = (f % K) * BANDS;
-    let loud = 0;
     for (let b = 0; b < BANDS; b++) {
-      const vl = Math.min(1, Math.max(0, (db[0][f * BANDS + b] - bottom) / range));
-      const vr = Math.min(1, Math.max(0, (db[1][f * BANDS + b] - bottom) / range));
-      const m = (vl + vr) / 2;
+      const i = f * BANDS + b, m = vM[i];
       const flux = Math.min(1, Math.max(0, m - prev[b]) * 6);
       prev[b] = prev[b] * 0.6 + m * 0.4;          // référence lissée : on ne garde que ce qui surgit
-      loud += m;
       const o = (row * texW + col0 + b) * 4;
-      data[o] = vl * 255; data[o + 1] = vr * 255; data[o + 2] = flux * 255;
-      mono[f * BANDS + b] = m * 255;
+      data[o] = vL[i] * 255; data[o + 1] = vR[i] * 255; data[o + 2] = flux * 255; data[o + 3] = sal[i] * 255;
+      mono[i] = m * 255; events[i] = sal[i] * 255;
     }
-    const a = Math.min(255, loud / BANDS * 2 * 255);
-    for (let b = 0; b < BANDS; b++) data[(row * texW + col0 + b) * 4 + 3] = a;
   }
   const tex = new THREE.DataTexture(data, texW, texH, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.minFilter = tex.magFilter = THREE.NearestFilter;
   tex.needsUpdate = true;
-  return { tex, frames, fps: sr / hop, K, duration: buffer.duration, mono, N };
+  return { tex, frames, fps, K, duration: buffer.duration, mono, events, N };
 }
 
 // ── Particules ──
@@ -363,7 +408,8 @@ uniform float uK, uBands, uFrames, uFps, uDur;
 uniform float uTime, uSpan, uBehind, uSpeed, uShape, uRadius, uRelief, uThick;
 uniform float uFloor, uGain, uContrast, uStereo, uDensity, uDust;
 uniform float uSize, uScale, uNoise, uNoiseScale, uFlowT, uBurst, uFog;
-varying float vA, vFreq, vAlpha, vFog, vFlux;
+uniform float uEvents, uEvFloor, uHighlight;
+varying float vA, vFreq, vAlpha, vFog, vFlux, vEv;
 ${NOISE_GLSL}
 
 vec4 fetchFB(float f, float b){
@@ -394,7 +440,10 @@ void main(){
 
   vec4 sp = specAt(tP, f);
   float amp = uStereo > 0.5 ? (side < 0. ? sp.r : sp.g) : 0.5 * (sp.r + sp.g);
-  float a = clamp((amp - uFloor) / max(0.01, 1. - uFloor), 0., 1.);
+  // spectrogramme brut (seuil) et événements (ce qui dépasse du bruit de fond), mélangés par « Events »
+  float aRaw = clamp((amp - uFloor) / max(0.01, 1. - uFloor), 0., 1.);
+  float ev = clamp((sp.a - uEvFloor) / max(0.01, 1. - uEvFloor), 0., 1.);
+  float a = mix(aRaw, ev, uEvents);
   a = clamp(pow(a, uContrast) * uGain, 0., 1.5);
   float flux = sp.b * step(0.001, a);
 
@@ -439,18 +488,18 @@ void main(){
   vec4 mv = modelViewMatrix * vec4(p, 1.);
   gl_Position = projectionMatrix * mv;
   float dist = max(-mv.z, 0.05);
-  float sz = uSize * (0.5 + aRand2.y) * (0.7 + 0.8 * min(a, 1.) + flux * uBurst * 0.6);
+  float sz = uSize * (0.5 + aRand2.y) * (0.7 + 0.8 * min(a, 1.) + flux * uBurst * 0.6) * (1. + ev * uHighlight * 0.5);
   gl_PointSize = min(96., sz * uScale / dist);
   alpha *= smoothstep(0.05, 0.6, dist);              // pas de grosse tache collée à l'objectif
 
-  vA = min(a, 1.); vFreq = f; vAlpha = alpha; vFlux = flux;
+  vA = min(a, 1.); vFreq = f; vAlpha = alpha; vFlux = flux; vEv = ev;
   vFog = 1. - exp(-pow(dist * uFog, 1.6));
 }`;
 
 const fragmentShader = /* glsl */`
-uniform vec3 uC1, uC2, uC3, uFogColor;
-uniform float uColorBy, uSoft, uBright;
-varying float vA, vFreq, vAlpha, vFog, vFlux;
+uniform vec3 uC1, uC2, uC3, uFogColor, uCEv;
+uniform float uColorBy, uSoft, uBright, uHighlight;
+varying float vA, vFreq, vAlpha, vFog, vFlux, vEv;
 void main(){
   float d = length(gl_PointCoord - 0.5) * 2.;
   if (d > 1.) discard;
@@ -459,6 +508,9 @@ void main(){
   vec3 col = k < 0.5 ? mix(uC1, uC2, k * 2.) : mix(uC2, uC3, k * 2. - 1.);
   col = mix(col, uC3, vFlux * 0.5);
   col *= uBright * (0.45 + 0.9 * vA);
+  // événement : la couleur d'événement prend le dessus, plus lumineuse
+  float h = clamp(vEv * uHighlight, 0., 1.);
+  col = mix(col, uCEv * uBright * (0.7 + 0.6 * h), h);
   col = mix(col, uFogColor, vFog);
   gl_FragColor = vec4(col, m * vAlpha);
 }`;
@@ -471,6 +523,7 @@ const uniforms = {
   uSize: { value: 0.02 }, uScale: { value: 500 }, uNoise: { value: 0.3 }, uNoiseScale: { value: 0.5 }, uFlowT: { value: 0 }, uBurst: { value: 1 },
   uFog: { value: 0.06 }, uC1: { value: new THREE.Color() }, uC2: { value: new THREE.Color() }, uC3: { value: new THREE.Color() },
   uFogColor: { value: new THREE.Color() }, uColorBy: { value: 0 }, uSoft: { value: 1.4 }, uBright: { value: 1 },
+  uEvents: { value: 0.7 }, uEvFloor: { value: 0.1 }, uHighlight: { value: 1 }, uCEv: { value: new THREE.Color() },
 };
 const material = new THREE.ShaderMaterial({
   uniforms, vertexShader, fragmentShader,
@@ -495,7 +548,7 @@ function buildPoints(count) {
 }
 
 // ── Réglages ──
-const SLIDERS = ["floor", "gain", "contrast", "radius", "relief", "thick", "speed", "span", "wander", "fov",
+const SLIDERS = ["events", "evFloor", "highlight", "floor", "gain", "contrast", "radius", "relief", "thick", "speed", "span", "wander", "fov",
   "count", "density", "dust", "size", "soft", "noise", "noiseScale", "flow", "burst", "bright", "fog",
   "bloom", "bloomRadius", "bloomThreshold", "trails"];
 const S = {};
@@ -514,6 +567,8 @@ function readState() {
   U.uBright.value = S.bright; U.uFog.value = S.fog; U.uColorBy.value = S.colorBy;
   U.uC1.value.set($("c1").value); U.uC2.value.set($("c2").value); U.uC3.value.set($("c3").value);
   U.uFogColor.value.set($("fogColor").value);
+  U.uEvents.value = S.events; U.uEvFloor.value = S.evFloor; U.uHighlight.value = S.highlight;
+  U.uCEv.value.set($("evColor").value);
   renderer.setClearColor($("fogColor").value, 1);
   material.blending = S.blend === "add" ? THREE.AdditiveBlending : THREE.NormalBlending;
   bloomPass.strength = S.bloom; bloomPass.radius = S.bloomRadius; bloomPass.threshold = S.bloomThreshold;
@@ -634,20 +689,40 @@ async function loadDefault() {
 // ── Spectrogramme 2D (panneau de droite) ──
 const strip = $("strip"), sctx = strip.getContext("2d");
 let stripBase = null;
+// échelle de couleurs d'un spectrogramme : noir → violet → magenta → orange → jaune pâle
+const HEAT = [[0, 0, 4], [40, 11, 84], [101, 21, 110], [159, 42, 99], [212, 72, 66], [245, 125, 21], [250, 193, 39], [252, 255, 164]];
+const heat = (v) => {
+  const x = Math.min(1, Math.max(0, v)) * (HEAT.length - 1), i = Math.min(HEAT.length - 2, Math.floor(x)), t = x - i;
+  return HEAT[i].map((c, k) => c + (HEAT[i + 1][k] - c) * t);
+};
+// le spectrogramme 2D montre ce que voit la 3D : le brut et les événements, mélangés par « Events »
 function drawStripBase() {
+  if (!spec) return;
   const W = strip.width, H = strip.height;
   const img = sctx.createImageData(W, H);
+  const mixE = S.events, evF = S.evFloor;
   for (let x = 0; x < W; x++) {
     const f0 = Math.floor(x / W * spec.frames), f1 = Math.max(f0 + 1, Math.floor((x + 1) / W * spec.frames));
     for (let y = 0; y < H; y++) {
       const b = Math.floor((1 - (y + 0.5) / H) * BANDS);
       let m = 0;
-      for (let f = f0; f < f1; f += Math.max(1, Math.floor((f1 - f0) / 6))) m = Math.max(m, spec.mono[f * BANDS + b]);
+      for (let f = f0; f < f1; f += Math.max(1, Math.floor((f1 - f0) / 6))) {
+        const i = f * BANDS + b;
+        const ev = Math.max(0, (spec.events[i] / 255 - evF) / (1 - evF));
+        m = Math.max(m, spec.mono[i] / 255 * (1 - mixE) + ev * mixE);
+      }
+      const [r, g, bl] = heat(m);
       const o = (y * W + x) * 4;
-      img.data[o] = img.data[o + 1] = img.data[o + 2] = m; img.data[o + 3] = 255;
+      img.data[o] = r; img.data[o + 1] = g; img.data[o + 2] = bl; img.data[o + 3] = 255;
     }
   }
   stripBase = img;
+}
+let stripPending = false;
+function redrawStripSoon() {
+  if (stripPending) return;
+  stripPending = true;
+  requestAnimationFrame(() => { stripPending = false; drawStripBase(); });
 }
 function drawStrip(t) {
   if (!stripBase || !spec) return;
@@ -743,12 +818,16 @@ async function toggleRecord() {
 audio.addEventListener("ended", () => { if (recorder) recorder.stop(); });
 
 // ── Événements ──
-$("panel").addEventListener("input", (e) => { if (e.target.id !== "count") readState(); });
+$("panel").addEventListener("input", (e) => {
+  if (e.target.id === "count") return;
+  readState();
+  if (e.target.id === "events" || e.target.id === "evFloor") redrawStripSoon();
+});
 $("count").addEventListener("change", () => buildPoints(Math.round(parseFloat($("count").value) * 1000)));
 $("resSelect").addEventListener("change", runAnalysis);
 document.querySelectorAll(".palette").forEach((btn) => btn.addEventListener("click", () => {
-  const [a, b, c, f] = btn.dataset.colors.split(",");
-  $("c1").value = a; $("c2").value = b; $("c3").value = c; $("fogColor").value = f;
+  const [a, b, c, f, e] = btn.dataset.colors.split(",");
+  $("c1").value = a; $("c2").value = b; $("c3").value = c; $("fogColor").value = f; $("evColor").value = e;
   $("blend").value = btn.dataset.blend;
   readState();
 }));
@@ -792,6 +871,7 @@ $("resetBtn").addEventListener("click", () => {
   for (const [el, v] of initial) { if (el.type === "checkbox") el.checked = v; else el.value = v; }
   yaw = pitch = 0;
   readState();
+  redrawStripSoon();
   if ($("count").value !== prevCount) buildPoints(Math.round(parseFloat($("count").value) * 1000));
   if ($("resSelect").value !== prevRes) runAnalysis();
 });
