@@ -72,6 +72,7 @@
         <option value="0">Tunnel</option>
         <option value="1">Canopy</option>
         <option value="2">Terrain</option>
+        <option value="3">Hybrid</option>
       </select>
     </div>
     <div class="row"><label for="radius" title="Size of the space around the camera">Radius</label><input id="radius" type="range" min="0.5" max="10" step="0.05" value="3" /></div>
@@ -497,13 +498,22 @@ void main(){
 
   float z = -tP * uSpeed;
   float jit = aRand.z - 0.5;
+  // Hybride : chaque particule tire au sort, une fois pour toutes, tunnel ou terrain.
+  // Même nombre de points au total : la moitié dessine la voûte, l'autre le sol en relief.
+  float shape = uShape;
+  float ringScale = 1.;
+  if (uShape > 2.5) {
+    float h = fract(sin(dot(aRand.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    shape = h < 0.5 ? 0. : 2.;
+    ringScale = 1.15;                                // la voûte s'élargit un peu pour englober le sol
+  }
   vec3 p;
-  if (uShape < 0.5) {
+  if (shape < 0.5) {
     // Tunnel : graves au sol, aigus au plafond ; gauche à gauche, droite à droite. Le son fort se rapproche.
     float ang = -1.5707963 + side * f * 3.1415926;
-    float r = uRadius * (1. - 0.75 * uRelief * min(a, 1.)) + jit * uThick * uRadius;
+    float r = uRadius * ringScale * (1. - 0.75 * uRelief * min(a, 1.)) + jit * uThick * uRadius;
     p = vec3(cos(ang) * r, sin(ang) * r, z);
-  } else if (uShape < 1.5) {
+  } else if (shape < 1.5) {
     // Canopée : la hauteur suit la fréquence (graves au sol, aigus dans les cimes), de part et d'autre d'un passage
     float spread = aRand2.y;
     float x = side * uRadius * (0.35 + 1.6 * spread) * (1. - 0.45 * uRelief * min(a, 1.));
@@ -522,7 +532,7 @@ void main(){
   p += n * uNoise * uRadius * (0.35 + 0.65 * min(a, 1.));
 
   // éclats : ce qui surgit dans le son est projeté vers l'extérieur
-  vec2 dir = uShape > 1.5 ? vec2(0., 1.) : normalize(p.xy + vec2(1e-4));
+  vec2 dir = shape > 1.5 ? vec2(0., 1.) : normalize(p.xy + vec2(1e-4));
   p.xy += dir * flux * uBurst * uRadius * (0.3 + aRand2.y) * 0.6;
 
   vec4 mv = modelViewMatrix * vec4(p, 1.);
@@ -623,6 +633,7 @@ function readState() {
     "Lows on the floor, highs on the ceiling, left and right channels on each side. Loud sounds close in.",
     "Height follows pitch: lows near the ground, highs in the treetops, on both sides of a clearing.",
     "Lows in the middle, highs towards the edges; the ground rises with the volume.",
+    "Tunnel and terrain together: half the particles form the vault, half the ground, for the same total.",
   ];
   $("shapeSelect").closest(".row").title = hints[S.shape];   // l'explication passe en infobulle
 }
@@ -789,8 +800,8 @@ strip.addEventListener("click", (e) => {
 // position 3D d'un point du spectrogramme, comme dans le shader (sans la dérive organique)
 function worldOf(t, f01, side, a) {
   const R = S.radius, z = -t * S.speed;
-  if (S.shape === 0) {
-    const ang = -Math.PI / 2 + side * f01 * Math.PI, r = R * (1 - 0.75 * S.relief * a);
+  if (S.shape === 0 || S.shape === 3) {               // l'hybride est repéré sur sa voûte
+    const ang = -Math.PI / 2 + side * f01 * Math.PI, r = R * (S.shape === 3 ? 1.15 : 1) * (1 - 0.75 * S.relief * a);
     return new THREE.Vector3(Math.cos(ang) * r, Math.sin(ang) * r, z);
   }
   if (S.shape === 1) return new THREE.Vector3(side * R * 1.1 * (1 - 0.45 * S.relief * a), (-0.9 + 2.7 * f01) * R, z);
@@ -816,13 +827,8 @@ function glass(c, x, y, w, h, rad) {
   const sw = Math.min(canvas.width - sx, w + 2 * m), sh = Math.min(canvas.height - sy, h + 2 * m);
   if (sw > 0 && sh > 0) c.drawImage(canvas, sx, sy, sw, sh, sx, sy, sw, sh);
   c.filter = "none";
-  c.fillStyle = "rgba(255,255,255,0.16)";           // voile clair : du verre dépoli sur le noir
+  c.fillStyle = "rgba(255,255,255,0.16)";           // voile clair : du verre dépoli sur le noir, sans contour
   c.fillRect(x, y, w, h);
-  c.restore();
-  c.save();
-  c.strokeStyle = "rgba(255,255,255,0.28)";
-  c.lineWidth = 0.75 * u;
-  c.beginPath(); c.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, rad); c.stroke();
   c.restore();
 }
 
