@@ -1354,7 +1354,9 @@ async function runIntro() {
   // le geste débloque le son tout de suite (le navigateur ne l'accepte que pendant le clic lui-même)
   const skip = () => { introSkip = true; ensureAudioGraph(); actx.resume().catch(() => {}); introGesture?.(); };
   introEl.addEventListener("click", skip);
-  document.addEventListener("keydown", skip, { once: true });
+  // une touche passe l'intro, sauf quand on règle le panneau au clavier
+  const keySkip = (e) => { if (e.target.closest?.("#panel")) return; document.removeEventListener("keydown", keySkip); skip(); };
+  document.addEventListener("keydown", keySkip);
   // texte tapé à la machine
   for (let li = 0; li < INTRO_LINES.length; li++) {
     if (li) { introText.textContent += "\n"; await introWait(650); }
@@ -1380,7 +1382,7 @@ async function runIntro() {
       try { await tryStart(); } catch {}
     }
   }
-  // fondu d'ouverture sur le travelling, puis le panneau
+  // fondu d'ouverture sur le travelling (le panneau, lui, est resté affiché pendant toute l'intro)
   introEl.classList.add("out");
   setTimeout(() => { document.body.classList.remove("intro"); introEl.hidden = true; }, 1800);
 }

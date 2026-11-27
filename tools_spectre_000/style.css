@@ -211,8 +211,8 @@ input[type="checkbox"]:checked::after { transform: translateX(13px); background:
   font-size: var(--fs-small);
   opacity: 0.5;
 }
-/* pendant l'intro, le panneau attend ; il apparaît ensuite en fondu */
-body.intro #panel { opacity: 0; visibility: hidden; }
+/* pendant l'intro, le panneau reste visible et utilisable, au-dessus du noir */
+body.intro #panel { z-index: 11; }
 @media (prefers-reduced-motion: reduce) {
   #intro, #introText { transition: none; }
   #introText::after { animation: none; }
