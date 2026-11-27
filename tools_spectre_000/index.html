@@ -499,12 +499,12 @@ void main(){
   float z = -tP * uSpeed;
   float jit = aRand.z - 0.5;
   // Hybride : chaque particule tire au sort, une fois pour toutes, tunnel ou terrain.
-  // Même nombre de points au total : la moitié dessine la voûte, l'autre le sol en relief.
+  // Même nombre de points au total : un tiers dessine la voûte, deux tiers le sol en relief.
   float shape = uShape;
   float ringScale = 1.;
   if (uShape > 2.5) {
     float h = fract(sin(dot(aRand.xy, vec2(12.9898, 78.233))) * 43758.5453);
-    shape = h < 0.5 ? 0. : 2.;
+    shape = h < 0.3 ? 0. : 2.;
     ringScale = 1.15;                                // la voûte s'élargit un peu pour englober le sol
   }
   vec3 p;
@@ -633,7 +633,7 @@ function readState() {
     "Lows on the floor, highs on the ceiling, left and right channels on each side. Loud sounds close in.",
     "Height follows pitch: lows near the ground, highs in the treetops, on both sides of a clearing.",
     "Lows in the middle, highs towards the edges; the ground rises with the volume.",
-    "Tunnel and terrain together: half the particles form the vault, half the ground, for the same total.",
+    "Tunnel and terrain together: 30 % of the particles form the vault, 70 % the ground, for the same total.",
   ];
   $("shapeSelect").closest(".row").title = hints[S.shape];   // l'explication passe en infobulle
 }
