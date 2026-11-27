@@ -1,0 +1,7 @@
+# Matière brute, hors dépôt
+Sources/
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Spectral travel</title>
+<!-- interface commune des outils (verre, typo, sliders), puis la mise en page propre à l'outil -->
+<link rel="stylesheet" href="../ui/ui_001.css" />
+<link rel="stylesheet" href="style.css" />
+<script defer src="../ui/ui_001.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body data-mobile="ok" data-layout="fullscreen">
+
+<!-- Rendu plein écran -->
+<canvas id="gl"></canvas>
+<p id="status" class="mono">Loading…</p>
+
+<!-- Panneau latéral (paramètres)
+     Principe : le spectrogramme du son (temps × fréquence) devient un espace en 3D.
+     Le temps est la profondeur : la caméra avance dans le son au rythme de la lecture.
+     Chaque point est une particule, d'autant plus dense que le son est fort à cette fréquence. -->
+<aside id="panel">
+
+  <header id="panelHead">
+    <p class="eyebrow"><a class="badge backLink" href="../" title="Back to all tools">← Webtools</a></p>
+    <h1 class="toolTitle">Spectral<br>travel</h1>
+  </header>
+
+  <!-- Son : lecture du spectrogramme -->
+  <div class="section">
+    <h2>Sound</h2>
+    <div class="row">
+      <label for="resSelect" title="FFT size: fine = sharper pitch, coarser time">Analysis</label>
+      <select id="resSelect" class="asPills">
+        <option value="1024">Fast</option>
+        <option value="2048" selected>Medium</option>
+        <option value="4096">Fine</option>
+      </select>
+    </div>
+    <div class="row"><label for="floor" title="Quieter parts of the spectrum vanish">Threshold</label><input id="floor" type="range" min="0" max="0.95" step="0.01" value="0.38" /></div>
+    <div class="row"><label for="gain" title="Boost of what remains">Gain</label><input id="gain" type="range" min="0.2" max="4" step="0.01" value="1.6" /></div>
+    <div class="row"><label for="contrast" title="Above 1: only the loudest peaks stay">Contrast</label><input id="contrast" type="range" min="0.3" max="3" step="0.01" value="1.2" /></div>
+    <label class="check"><input id="stereo" type="checkbox" checked /><span>Stereo · left and right apart</span></label>
+    <p class="hint" id="soundInfo"></p>
+  </div>
+
+  <!-- Espace : la forme que prend le spectrogramme autour de la caméra -->
+  <div class="section">
+    <h2>Space</h2>
+    <div class="row">
+      <label for="shapeSelect">Shape</label>
+      <select id="shapeSelect" class="asPills">
+        <option value="0">Tunnel</option>
+        <option value="1">Canopy</option>
+        <option value="2">Terrain</option>
+      </select>
+    </div>
+    <p class="hint" id="shapeHint"></p>
+    <div class="row"><label for="radius" title="Size of the space around the camera">Radius</label><input id="radius" type="range" min="0.5" max="10" step="0.05" value="3" /></div>
+    <div class="row"><label for="relief" title="Loud sounds come closer to the camera">Relief</label><input id="relief" type="range" min="0" max="1.5" step="0.01" value="0.55" /></div>
+    <div class="row"><label for="thick" title="Scatter of the points around the surface">Thickness</label><input id="thick" type="range" min="0" max="2" step="0.01" value="0.35" /></div>
+  </div>
+
+  <!-- Travelling : la caméra avance dans le temps du son -->
+  <div class="section">
+    <h2>Travel</h2>
+    <div class="row"><label for="speed" title="Distance covered per second of sound">Speed</label><input id="speed" type="range" min="0.1" max="8" step="0.05" value="1.6" /></div>
+    <div class="row"><label for="span" title="Seconds of sound visible ahead">Ahead</label><input id="span" data-unit="s" type="range" min="2" max="40" step="0.5" value="12" /></div>
+    <div class="row"><label for="wander" title="The camera drifts, like a flying insect">Wander</label><input id="wander" type="range" min="0" max="1" step="0.01" value="0.25" /></div>
+    <div class="row"><label for="fov" title="Low = tele, high = wide angle">Lens</label><input id="fov" data-unit="°" type="range" min="20" max="130" step="1" value="75" /></div>
+    <p class="hint">Drag on the image to look around, double-click to look ahead again.</p>
+  </div>
+
+  <!-- Matière : les points, leur dérive organique, les éclats sur les attaques -->
+  <div class="section">
+    <h2>Matter</h2>
+    <div class="row"><label for="count" title="Number of particles (heavier above 1.5 M)">Points</label><input id="count" data-unit="k" type="range" min="100" max="3000" step="50" value="800" /></div>
+    <div class="row"><label for="density" title="Share of the particles the sound lights up">Density</label><input id="density" type="range" min="0" max="2" step="0.01" value="1" /></div>
+    <div class="row"><label for="dust" title="Faint particles that stay in the silence">Dust</label><input id="dust" type="range" min="0" max="0.3" step="0.005" value="0.03" /></div>
+    <div class="row"><label for="size" title="Size of a particle">Size</label><input id="size" type="range" min="0.003" max="0.12" step="0.001" value="0.022" /></div>
+    <div class="row"><label for="soft" title="Hard dots or soft splats">Softness</label><input id="soft" type="range" min="0.2" max="4" step="0.01" value="1.4" /></div>
+    <div class="row"><label for="noise" title="Organic drift of the matter">Organic</label><input id="noise" type="range" min="0" max="1" step="0.01" value="0.28" /></div>
+    <div class="row"><label for="noiseScale" title="Size of the organic swirls">Grain</label><input id="noiseScale" type="range" min="0.05" max="3" step="0.01" value="0.55" /></div>
+    <div class="row"><label for="flow" title="How fast the matter breathes">Flow</label><input id="flow" type="range" min="0" max="2" step="0.01" value="0.25" /></div>
+    <div class="row"><label for="burst" title="Sudden sounds (calls, clicks) burst outwards">Burst</label><input id="burst" type="range" min="0" max="3" step="0.01" value="0.9" /></div>
+  </div>
+
+  <!-- Couleurs -->
+  <div class="section">
+    <h2>Colours</h2>
+    <div class="row">
+      <label for="colorBy">Colour by</label>
+      <select id="colorBy" class="asPills">
+        <option value="0">Pitch</option>
+        <option value="1">Energy</option>
+      </select>
+    </div>
+    <div id="colorRow">
+      <label>Low<input id="c1" type="color" value="#0b1d5c" /></label>
+      <label>Mid<input id="c2" type="color" value="#2e6cff" /></label>
+      <label>High<input id="c3" type="color" value="#dcefff" /></label>
+      <label>Fog<input id="fogColor" type="color" value="#000000" /></label>
+    </div>
+    <div class="btnRow">
+      <button class="palette" type="button" data-colors="#0b1d5c,#2e6cff,#dcefff,#000000" data-blend="add">Night</button>
+      <button class="palette" type="button" data-colors="#062417,#1fa36a,#d2ffe0,#000000" data-blend="add">Moss</button>
+      <button class="palette" type="button" data-colors="#3a0d00,#ff6a1a,#ffe5b8,#000000" data-blend="add">Ember</button>
+      <button class="palette" type="button" data-colors="#5c1f06,#c9661d,#f4c27c,#f2e8d6" data-blend="normal">Haze</button>
+      <button class="palette" type="button" data-colors="#25106b,#ff2d6b,#ffd3e2,#05020b" data-blend="add">Pigment</button>
+      <button class="palette" type="button" data-colors="#222222,#9a9a9a,#ffffff,#000000" data-blend="add">Grey</button>
+    </div>
+    <div class="row">
+      <label for="blend">Blend</label>
+      <select id="blend" class="asPills">
+        <option value="add">Light</option>
+        <option value="normal">Matter</option>
+      </select>
+    </div>
+    <div class="row"><label for="bright" title="Brightness of the particles">Brightness</label><input id="bright" type="range" min="0.05" max="3" step="0.01" value="0.9" /></div>
+    <div class="row"><label for="fog" title="The distance dissolves into the fog colour">Fog</label><input id="fog" type="range" min="0" max="0.3" step="0.001" value="0.06" /></div>
+  </div>
+
+  <!-- Post-traitement -->
+  <div class="section">
+    <h2>Glow · trails</h2>
+    <div class="row"><label for="bloom" title="Halo around the brightest points">Glow</label><input id="bloom" type="range" min="0" max="3" step="0.01" value="0.8" /></div>
+    <div class="row"><label for="bloomRadius" title="Width of the halo">Glow width</label><input id="bloomRadius" type="range" min="0" max="1" step="0.01" value="0.55" /></div>
+    <div class="row"><label for="bloomThreshold" title="Only points brighter than this glow">Glow from</label><input id="bloomThreshold" type="range" min="0" max="1" step="0.01" value="0.15" /></div>
+    <div class="row"><label for="trails" title="Each image lingers: streaks of motion (0 = off)">Trails</label><input id="trails" type="range" min="0" max="0.98" step="0.01" value="0" /></div>
+  </div>
+
+  <footer id="panelFooter">
+    <button id="resetBtn" type="button">Reset</button>
+    <button id="privacyBtn" type="button">Privacy · GDPR</button>
+  </footer>
+</aside>
+
+<!-- Notice de confidentialité (RGPD) -->
+<dialog id="privacyDialog" aria-labelledby="privacyTitle">
+  <h2 id="privacyTitle">Privacy · GDPR</h2>
+  <h3>Data controller</h3>
+  <p>Valentin Maynadié — contact: <a href="mailto:valentinmaynadie@gmail.com">valentinmaynadie@gmail.com</a></p>
+  <h3>Sounds and exports</h3>
+  <p>Sounds are analysed and drawn in your browser. Images and videos are made locally and nothing is sent to a server.</p>
+  <h3>Cookies and tracking</h3>
+  <p>This site uses no cookies, no analytics and no user accounts. Fonts are served with the page; the 3D library is loaded from a public CDN (jsDelivr).</p>
+  <h3>Your rights</h3>
+  <p>This site keeps no personal data. For any question about your rights (access, rectification, erasure, objection), write to the address above. You can also contact the CNIL, the French data protection authority (cnil.fr).</p>
+  <form method="dialog">
+    <button type="submit">Close</button>
+  </form>
+</dialog>
+
+<!-- Panneau de droite, calé en bas : spectrogramme, lecteur, export -->
+<aside id="rightPanel">
+  <canvas id="strip" width="460" height="180" title="The whole sound, as a spectrogram · click to jump"></canvas>
+  <div id="timeRow" class="mono"><span id="timeLabel">0:00</span><span id="durLabel">0:00</span></div>
+  <input id="seek" type="range" min="0" max="1" step="0.001" value="0" aria-label="Position" />
+  <div id="transport">
+    <button id="rewindBtn" type="button" title="Back to the start · Home"><svg viewBox="0 0 10 10"><path d="M1 1h1.5v8H1zM9 1v8L3 5z"/></svg></button>
+    <button id="playBtn" type="button" title="Play / pause · Space"><svg viewBox="0 0 10 10"><path id="playIcon" d="M2 1l7 4-7 4z"/></svg></button>
+  </div>
+  <div class="btnRow">
+    <button id="loadBtn" type="button" title="Any sound file · or drop it on the image">Load sound</button>
+    <input id="fileInput" type="file" accept="audio/*,.wav,.aif,.aiff,.flac,.mp3,.ogg,.m4a" hidden />
+  </div>
+  <div id="exportRow">
+    <button id="exportBtn" type="button" title="Image of the current view · P">Export PNG</button>
+    <button id="recordBtn" type="button" title="Video with sound, from here until you stop · R">Record</button>
+  </div>
+  <p class="hint">Space play · ←/→ 5 s · H hide panels</p>
+</aside>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════════
+// Spectral travel — on voyage dans le spectrogramme d'un son.
+// 1. Le son entier est analysé (FFT, bandes en échelle logarithmique, gauche et droite séparées,
+//    plus les attaques : ce qui apparaît d'une image à l'autre). Résultat rangé dans une texture.
+// 2. Un nuage fixe de particules sur le GPU : chaque particule a un instant (sa profondeur) et
+//    une fréquence (sa place autour de la caméra). Le vertex shader lit le spectrogramme à cet
+//    endroit : si le son y est fort, la particule apparaît, se rapproche, s'agite.
+// 3. La caméra avance avec la lecture : 1 seconde de son = « Speed » unités de profondeur.
+//    Les particules dépassées repartent au fond : le nuage ne finit jamais.
+// ═══════════════════════════════════════════════════════════════════
+import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { AfterimagePass } from "three/addons/postprocessing/AfterimagePass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("gl");
+const statusEl = $("status");
+const setStatus = (t) => { statusEl.textContent = t; statusEl.hidden = !t; };
+
+// ── Rendu ──
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+// une erreur de shader s'affiche au centre de l'écran plutôt que dans la console seule
+renderer.debug.onShaderError = (gl, program, vs, fs) => {
+  setStatus(`Shader error: ${gl.getShaderInfoLog(vs) || ""} ${gl.getShaderInfoLog(fs) || ""}`.trim());
+};
+window.addEventListener("error", (e) => { if (!/ResizeObserver/.test(e.message)) setStatus(`Error: ${e.message}`); });
+window.addEventListener("unhandledrejection", (e) => setStatus(`Error: ${e.reason?.message || e.reason}`));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, 1, 0.01, 400);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.8, 0.55, 0.15);
+composer.addPass(bloomPass);
+const trailPass = new AfterimagePass(0);
+composer.addPass(trailPass);
+composer.addPass(new OutputPass());
+
+// ── Analyse du son ──
+const BANDS = 256, FMIN = 30, FMAX = 18000;
+let spec = null;          // { tex, frames, fps, K, duration, mono (pour la bande 2D) }
+let audioBuffer = null;   // le son décodé, gardé pour relancer l'analyse
+let soundName = "";
+
+// FFT radix 2 en place
+function makeFFT(n) {
+  const rev = new Uint32Array(n);
+  const bits = Math.log2(n);
+  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); rev[i] = r; }
+  const cos = new Float32Array(n / 2), sin = new Float32Array(n / 2);
+  for (let i = 0; i < n / 2; i++) { cos[i] = Math.cos(-2 * Math.PI * i / n); sin[i] = Math.sin(-2 * Math.PI * i / n); }
+  return (re, im) => {
+    for (let i = 0; i < n; i++) { const j = rev[i]; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1, step = n / len;
+      for (let i = 0; i < n; i += len) {
+        for (let k = 0; k < half; k++) {
+          const a = i + k, b = a + half, wr = cos[k * step], wi = sin[k * step];
+          const tr = re[b] * wr - im[b] * wi, ti = re[b] * wi + im[b] * wr;
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        }
+      }
+    }
+  };
+}
+
+async function analyse(buffer, N) {
+  const sr = buffer.sampleRate, hop = N / 2;
+  const L = buffer.getChannelData(0);
+  const R = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : L;
+  const frames = Math.max(1, Math.floor((L.length - N) / hop) + 1);
+  const fft = makeFFT(N);
+  const win = new Float32Array(N);
+  for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+  // bandes logarithmiques : bornes en indices de FFT
+  const lo = new Float32Array(BANDS), hi = new Float32Array(BANDS);
+  for (let b = 0; b < BANDS; b++) {
+    lo[b] = FMIN * Math.pow(FMAX / FMIN, b / BANDS) / sr * N;
+    hi[b] = FMIN * Math.pow(FMAX / FMIN, (b + 1) / BANDS) / sr * N;
+  }
+  const db = [new Float32Array(frames * BANDS), new Float32Array(frames * BANDS)];
+  const re = new Float32Array(N), im = new Float32Array(N), mag = new Float32Array(N / 2 + 1);
+  const norm = 2 / N * 2; // Hann ≈ ½ d'amplitude
+  const chans = [L, R];
+  let t0 = performance.now();
+  for (let f = 0; f < frames; f++) {
+    for (let c = 0; c < 2; c++) {
+      const x = chans[c], off = f * hop;
+      for (let i = 0; i < N; i++) { re[i] = (x[off + i] || 0) * win[i]; im[i] = 0; }
+      fft(re, im);
+      for (let k = 0; k <= N / 2; k++) mag[k] = Math.hypot(re[k], im[k]) * norm;
+      const out = db[c];
+      for (let b = 0; b < BANDS; b++) {
+        let m;
+        if (hi[b] - lo[b] < 1) {                 // bande plus fine qu'un bin : interpolation
+          const p = (lo[b] + hi[b]) / 2, k = Math.floor(p), t = p - k;
+          m = mag[k] * (1 - t) + mag[Math.min(k + 1, N / 2)] * t;
+        } else {                                  // sinon le maximum des bins de la bande
+          m = 0;
+          for (let k = Math.floor(lo[b]); k <= Math.min(N / 2, Math.ceil(hi[b])); k++) if (mag[k] > m) m = mag[k];
+        }
+        out[f * BANDS + b] = 20 * Math.log10(m + 1e-9);
+      }
+    }
+    if (performance.now() - t0 > 30) {           // on rend la main au navigateur
+      setStatus(`Analysing the sound… ${Math.round(f / frames * 100)} %`);
+      await new Promise((r) => setTimeout(r));
+      t0 = performance.now();
+    }
+  }
+  // niveau de référence : le haut du spectre (99,5e centile), puis 72 dB de dynamique
+  const sample = [];
+  for (let i = 0; i < db[0].length; i += 97) sample.push(db[0][i], db[1][i]);
+  sample.sort((a, b) => a - b);
+  const top = sample[Math.floor(sample.length * 0.995)], range = 72, bottom = top - range;
+
+  // texture : chaque ligne range K images de BANDS bandes ; R gauche, V droite, B attaques, A volume
+  const maxTex = renderer.capabilities.maxTextureSize;
+  const K = Math.max(1, Math.floor(Math.min(maxTex, 16384) / BANDS));
+  const texW = K * BANDS, texH = Math.ceil(frames / K);
+  if (texH > maxTex) throw new Error("Sound too long for this graphics card");
+  const data = new Uint8Array(texW * texH * 4);
+  const mono = new Uint8Array(frames * BANDS);
+  const prev = new Float32Array(BANDS);
+  for (let f = 0; f < frames; f++) {
+    const row = Math.floor(f / K), col0 = (f % K) * BANDS;
+    let loud = 0;
+    for (let b = 0; b < BANDS; b++) {
+      const vl = Math.min(1, Math.max(0, (db[0][f * BANDS + b] - bottom) / range));
+      const vr = Math.min(1, Math.max(0, (db[1][f * BANDS + b] - bottom) / range));
+      const m = (vl + vr) / 2;
+      const flux = Math.min(1, Math.max(0, m - prev[b]) * 6);
+      prev[b] = prev[b] * 0.6 + m * 0.4;          // référence lissée : on ne garde que ce qui surgit
+      loud += m;
+      const o = (row * texW + col0 + b) * 4;
+      data[o] = vl * 255; data[o + 1] = vr * 255; data[o + 2] = flux * 255;
+      mono[f * BANDS + b] = m * 255;
+    }
+    const a = Math.min(255, loud / BANDS * 2 * 255);
+    for (let b = 0; b < BANDS; b++) data[(row * texW + col0 + b) * 4 + 3] = a;
+  }
+  const tex = new THREE.DataTexture(data, texW, texH, THREE.RGBAFormat, THREE.UnsignedByteType);
+  tex.minFilter = tex.magFilter = THREE.NearestFilter;
+  tex.needsUpdate = true;
+  return { tex, frames, fps: sr / hop, K, duration: buffer.duration, mono, N };
+}
+
+// ── Particules ──
+const NOISE_GLSL = /* glsl */`
+// bruit simplex 3D (Ashima Arts, MIT)
+vec3 mod289(vec3 x){return x-floor(x*(1./289.))*289.;}
+vec4 mod289(vec4 x){return x-floor(x*(1./289.))*289.;}
+vec4 permute(vec4 x){return mod289(((x*34.)+1.)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1./6.,1./3.); const vec4 D=vec4(0.,.5,1.,2.);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+  i=mod289(i);
+  vec4 p=permute(permute(permute(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
+  float n_=.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.+1.; vec4 s1=floor(b1)*2.+1.; vec4 sh=-step(h,vec4(0.));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+  vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.); m=m*m;
+  return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}`;
+
+const vertexShader = /* glsl */`
+attribute vec4 aRand;    // x : instant · y : fréquence · z : écart à la surface · w : côté (gauche / droite)
+attribute vec2 aRand2;   // x : seuil d'apparition · y : taille, écart
+uniform sampler2D uSpec;
+uniform float uK, uBands, uFrames, uFps, uDur;
+uniform float uTime, uSpan, uBehind, uSpeed, uShape, uRadius, uRelief, uThick;
+uniform float uFloor, uGain, uContrast, uStereo, uDensity, uDust;
+uniform float uSize, uScale, uNoise, uNoiseScale, uFlowT, uBurst, uFog;
+varying float vA, vFreq, vAlpha, vFog, vFlux;
+${NOISE_GLSL}
+
+vec4 fetchFB(float f, float b){
+  f = clamp(f, 0., uFrames - 1.);
+  float row = floor(f / uK);
+  float col = (f - row * uK) * uBands + b;
+  return texelFetch(uSpec, ivec2(int(col), int(row)), 0);
+}
+// spectrogramme à l'instant t (secondes), fréquence f (0 grave → 1 aigu), interpolé
+vec4 specAt(float t, float f){
+  if (t < 0. || t > uDur) return vec4(0.);
+  float fr = t * uFps, f0 = floor(fr), ft = fr - f0;
+  float bb = f * (uBands - 1.), b0 = floor(bb), bt = bb - b0, b1 = min(b0 + 1., uBands - 1.);
+  vec4 a = mix(fetchFB(f0, b0), fetchFB(f0, b1), bt);
+  vec4 c = mix(fetchFB(f0 + 1., b0), fetchFB(f0 + 1., b1), bt);
+  return mix(a, c, ft);
+}
+
+void main(){
+  // instant de la particule : fixe tant qu'elle est dans la fenêtre, puis elle repart au fond
+  float W = uSpan + uBehind;
+  float s = (uTime - uBehind) / W;
+  float u = aRand.x - floor(aRand.x - s);           // dans ]s, s+1]
+  float tP = u * W;
+  float depth01 = u - s;                             // 0 derrière la caméra → 1 au fond
+  float f = aRand.y;
+  float side = aRand.w < 0.5 ? -1. : 1.;
+
+  vec4 sp = specAt(tP, f);
+  float amp = uStereo > 0.5 ? (side < 0. ? sp.r : sp.g) : 0.5 * (sp.r + sp.g);
+  float a = clamp((amp - uFloor) / max(0.01, 1. - uFloor), 0., 1.);
+  a = clamp(pow(a, uContrast) * uGain, 0., 1.5);
+  float flux = sp.b * step(0.001, a);
+
+  // apparition : plus le son est fort, plus il y a de particules allumées
+  float th = aRand2.x;
+  float vis = smoothstep(th, th + 0.06, a * uDensity);
+  float dust = step(th, uDust) * 0.35;
+  float alpha = max(vis, dust);
+  alpha *= smoothstep(1., 0.82, depth01);            // pas de surgissement au fond
+  if (alpha < 0.002) { gl_Position = vec4(2., 2., 2., 1.); gl_PointSize = 0.; return; }
+
+  float z = -tP * uSpeed;
+  float jit = aRand.z - 0.5;
+  vec3 p;
+  if (uShape < 0.5) {
+    // Tunnel : graves au sol, aigus au plafond ; gauche à gauche, droite à droite. Le son fort se rapproche.
+    float ang = -1.5707963 + side * f * 3.1415926;
+    float r = uRadius * (1. - 0.75 * uRelief * min(a, 1.)) + jit * uThick * uRadius;
+    p = vec3(cos(ang) * r, sin(ang) * r, z);
+  } else if (uShape < 1.5) {
+    // Canopée : la hauteur suit la fréquence (graves au sol, aigus dans les cimes), de part et d'autre d'un passage
+    float spread = aRand2.y;
+    float x = side * uRadius * (0.35 + 1.6 * spread) * (1. - 0.45 * uRelief * min(a, 1.));
+    float y = mix(-0.9, 1.8, f) * uRadius + jit * uThick * uRadius * 0.6;
+    p = vec3(x, y, z);
+  } else {
+    // Terrain : graves au centre, aigus vers les bords ; le relief suit le volume
+    float x = side * (0.04 + f) * uRadius * 1.8;
+    float y = -0.75 * uRadius + a * uRelief * uRadius * 1.1 + jit * uThick * uRadius * 0.25;
+    p = vec3(x, y, z);
+  }
+
+  // dérive organique : un champ de bruit qui respire
+  vec3 q = p * uNoiseScale + vec3(0., 0., uFlowT);
+  vec3 n = vec3(snoise(q), snoise(q + vec3(31.4, 7.1, 2.7)), snoise(q + vec3(-11.3, 19.9, 5.3)));
+  p += n * uNoise * uRadius * (0.35 + 0.65 * min(a, 1.));
+
+  // éclats : ce qui surgit dans le son est projeté vers l'extérieur
+  vec2 dir = uShape > 1.5 ? vec2(0., 1.) : normalize(p.xy + vec2(1e-4));
+  p.xy += dir * flux * uBurst * uRadius * (0.3 + aRand2.y) * 0.6;
+
+  vec4 mv = modelViewMatrix * vec4(p, 1.);
+  gl_Position = projectionMatrix * mv;
+  float dist = max(-mv.z, 0.05);
+  float sz = uSize * (0.5 + aRand2.y) * (0.7 + 0.8 * min(a, 1.) + flux * uBurst * 0.6);
+  gl_PointSize = min(96., sz * uScale / dist);
+  alpha *= smoothstep(0.05, 0.6, dist);              // pas de grosse tache collée à l'objectif
+
+  vA = min(a, 1.); vFreq = f; vAlpha = alpha; vFlux = flux;
+  vFog = 1. - exp(-pow(dist * uFog, 1.6));
+}`;
+
+const fragmentShader = /* glsl */`
+uniform vec3 uC1, uC2, uC3, uFogColor;
+uniform float uColorBy, uSoft, uBright;
+varying float vA, vFreq, vAlpha, vFog, vFlux;
+void main(){
+  float d = length(gl_PointCoord - 0.5) * 2.;
+  if (d > 1.) discard;
+  float m = pow(1. - d, uSoft);
+  float k = uColorBy < 0.5 ? vFreq : vA;
+  vec3 col = k < 0.5 ? mix(uC1, uC2, k * 2.) : mix(uC2, uC3, k * 2. - 1.);
+  col = mix(col, uC3, vFlux * 0.5);
+  col *= uBright * (0.45 + 0.9 * vA);
+  col = mix(col, uFogColor, vFog);
+  gl_FragColor = vec4(col, m * vAlpha);
+}`;
+
+const uniforms = {
+  uSpec: { value: null }, uK: { value: 1 }, uBands: { value: BANDS }, uFrames: { value: 1 }, uFps: { value: 1 }, uDur: { value: 0 },
+  uTime: { value: 0 }, uSpan: { value: 12 }, uBehind: { value: 1.5 }, uSpeed: { value: 1.6 }, uShape: { value: 0 },
+  uRadius: { value: 3 }, uRelief: { value: 0.5 }, uThick: { value: 0.3 },
+  uFloor: { value: 0.4 }, uGain: { value: 1.5 }, uContrast: { value: 1 }, uStereo: { value: 1 }, uDensity: { value: 1 }, uDust: { value: 0.03 },
+  uSize: { value: 0.02 }, uScale: { value: 500 }, uNoise: { value: 0.3 }, uNoiseScale: { value: 0.5 }, uFlowT: { value: 0 }, uBurst: { value: 1 },
+  uFog: { value: 0.06 }, uC1: { value: new THREE.Color() }, uC2: { value: new THREE.Color() }, uC3: { value: new THREE.Color() },
+  uFogColor: { value: new THREE.Color() }, uColorBy: { value: 0 }, uSoft: { value: 1.4 }, uBright: { value: 1 },
+};
+const material = new THREE.ShaderMaterial({
+  uniforms, vertexShader, fragmentShader,
+  transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+});
+let points = null;
+function buildPoints(count) {
+  if (points) { scene.remove(points); points.geometry.dispose(); }
+  const g = new THREE.BufferGeometry();
+  const r4 = new Float32Array(count * 4), r2 = new Float32Array(count * 2);
+  for (let i = 0; i < count; i++) {
+    r4[i * 4] = Math.random(); r4[i * 4 + 1] = Math.random(); r4[i * 4 + 2] = Math.random(); r4[i * 4 + 3] = Math.random();
+    // seuil biaisé vers le bas : même un son faible allume quelques points
+    r2[i * 2] = Math.pow(Math.random(), 1.5); r2[i * 2 + 1] = Math.random();
+  }
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  g.setAttribute("aRand", new THREE.BufferAttribute(r4, 4));
+  g.setAttribute("aRand2", new THREE.BufferAttribute(r2, 2));
+  points = new THREE.Points(g, material);
+  points.frustumCulled = false;
+  scene.add(points);
+}
+
+// ── Réglages ──
+const SLIDERS = ["floor", "gain", "contrast", "radius", "relief", "thick", "speed", "span", "wander", "fov",
+  "count", "density", "dust", "size", "soft", "noise", "noiseScale", "flow", "burst", "bright", "fog",
+  "bloom", "bloomRadius", "bloomThreshold", "trails"];
+const S = {};
+function readState() {
+  for (const id of SLIDERS) S[id] = parseFloat($(id).value);
+  S.shape = parseFloat($("shapeSelect").value);
+  S.colorBy = parseFloat($("colorBy").value);
+  S.blend = $("blend").value;
+  S.stereo = $("stereo").checked;
+  const U = uniforms;
+  U.uFloor.value = S.floor; U.uGain.value = S.gain; U.uContrast.value = S.contrast; U.uStereo.value = S.stereo ? 1 : 0;
+  U.uShape.value = S.shape; U.uRadius.value = S.radius; U.uRelief.value = S.relief; U.uThick.value = S.thick;
+  U.uSpeed.value = S.speed; U.uSpan.value = S.span;
+  U.uDensity.value = S.density; U.uDust.value = S.dust; U.uSize.value = S.size; U.uSoft.value = S.soft;
+  U.uNoise.value = S.noise; U.uNoiseScale.value = S.noiseScale; U.uBurst.value = S.burst;
+  U.uBright.value = S.bright; U.uFog.value = S.fog; U.uColorBy.value = S.colorBy;
+  U.uC1.value.set($("c1").value); U.uC2.value.set($("c2").value); U.uC3.value.set($("c3").value);
+  U.uFogColor.value.set($("fogColor").value);
+  renderer.setClearColor($("fogColor").value, 1);
+  material.blending = S.blend === "add" ? THREE.AdditiveBlending : THREE.NormalBlending;
+  bloomPass.strength = S.bloom; bloomPass.radius = S.bloomRadius; bloomPass.threshold = S.bloomThreshold;
+  trailPass.enabled = S.trails > 0;
+  trailPass.uniforms.damp.value = S.trails;
+  if (camera.fov !== S.fov) { camera.fov = S.fov; camera.updateProjectionMatrix(); updateScale(); }
+  const hints = [
+    "Lows on the floor, highs on the ceiling, left and right channels on each side. Loud sounds close in.",
+    "Height follows pitch: lows near the ground, highs in the treetops, on both sides of a clearing.",
+    "Lows in the middle, highs towards the edges; the ground rises with the volume.",
+  ];
+  $("shapeHint").textContent = hints[S.shape];
+}
+
+// ── Taille de l'écran ──
+function updateScale() {
+  const h = renderer.getDrawingBufferSize(new THREE.Vector2()).y;
+  uniforms.uScale.value = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+}
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  updateScale();
+}
+window.addEventListener("resize", resize);
+
+// ── Lecture : un élément <audio> ; l'horloge est lissée pour un travelling sans à-coups ──
+const audio = new Audio();
+audio.preload = "auto";
+let actx = null, streamDest = null;
+function ensureAudioGraph() {
+  if (actx) return;
+  actx = new AudioContext();
+  const src = actx.createMediaElementSource(audio);
+  streamDest = actx.createMediaStreamDestination();
+  src.connect(actx.destination);
+  src.connect(streamDest);     // pour l'enregistrement vidéo avec le son
+}
+let clock = 0, clockAt = performance.now();
+function now() {
+  if (audio.paused) return audio.currentTime;
+  const t = clock + (performance.now() - clockAt) / 1000;
+  if (Math.abs(t - audio.currentTime) > 0.12) { clock = audio.currentTime; clockAt = performance.now(); return clock; }
+  return t;
+}
+function syncClock() { clock = audio.currentTime; clockAt = performance.now(); }
+audio.addEventListener("play", syncClock);
+audio.addEventListener("seeked", syncClock);
+audio.addEventListener("play", () => $("playIcon").setAttribute("d", "M2 1h2.2v8H2zM5.8 1H8v8H5.8z"));
+audio.addEventListener("pause", () => $("playIcon").setAttribute("d", "M2 1l7 4-7 4z"));
+async function togglePlay() {
+  if (!audio.src) return;
+  ensureAudioGraph();
+  if (actx.state === "suspended") await actx.resume();
+  if (audio.paused) { if (audio.ended || audio.currentTime >= audio.duration) audio.currentTime = 0; await audio.play(); }
+  else audio.pause();
+}
+function seekTo(t) {
+  if (!audio.src || !isFinite(audio.duration)) return;
+  audio.currentTime = Math.min(Math.max(0, t), audio.duration - 0.01);
+  syncClock();
+}
+const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+
+// ── Chargement d'un son ──
+let objectUrl = null;
+async function loadSound(arrayBuffer, name, url) {
+  soundName = name;
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = url ? null : URL.createObjectURL(new Blob([arrayBuffer]));
+  audio.src = url || objectUrl;
+  setStatus("Decoding the sound…");
+  const ctx = new OfflineAudioContext(2, 1, 44100);
+  audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+  await runAnalysis();
+}
+async function runAnalysis() {
+  if (!audioBuffer) return;
+  const N = parseInt($("resSelect").value, 10);
+  try {
+    const res = await analyse(audioBuffer, N);
+    if (spec) spec.tex.dispose();
+    spec = res;
+    uniforms.uSpec.value = spec.tex; uniforms.uK.value = spec.K; uniforms.uFrames.value = spec.frames;
+    uniforms.uFps.value = spec.fps; uniforms.uDur.value = spec.duration;
+    drawStripBase();
+    $("durLabel").textContent = fmt(spec.duration);
+    $("soundInfo").textContent = `${soundName} · ${fmt(spec.duration)} · ${audioBuffer.numberOfChannels === 1 ? "mono" : "stereo"} · ${audioBuffer.sampleRate} Hz\n${spec.frames.toLocaleString("en")} frames × ${BANDS} bands · ${Math.round(spec.fps)} frames/s`;
+    setStatus("");
+    // ?t=42 : ouvre la page à 42 s du son
+    const askedT = parseFloat(new URLSearchParams(location.search).get("t"));
+    if (askedT > 0 && audio.currentTime === 0) { audio.currentTime = askedT; syncClock(); }
+  } catch (err) {
+    setStatus(`Could not analyse this sound: ${err.message}`);
+  }
+}
+async function loadFile(file) {
+  if (!file) return;
+  if (audio && !audio.paused) audio.pause();
+  try { await loadSound(await file.arrayBuffer(), file.name); }
+  catch (err) { setStatus(`Could not read this file: ${err.message}`); }
+}
+// son de départ, rangé avec l'outil ; en local (file://) le navigateur refuse : on dépose le fichier
+async function loadDefault() {
+  const url = "audio/FILE8654.wav";
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(res.status);
+    await loadSound(await res.arrayBuffer(), "FILE8654.wav", url);
+  } catch {
+    setStatus("Drop a sound file on the image, or use Load sound.");
+  }
+}
+
+// ── Spectrogramme 2D (panneau de droite) ──
+const strip = $("strip"), sctx = strip.getContext("2d");
+let stripBase = null;
+function drawStripBase() {
+  const W = strip.width, H = strip.height;
+  const img = sctx.createImageData(W, H);
+  for (let x = 0; x < W; x++) {
+    const f0 = Math.floor(x / W * spec.frames), f1 = Math.max(f0 + 1, Math.floor((x + 1) / W * spec.frames));
+    for (let y = 0; y < H; y++) {
+      const b = Math.floor((1 - (y + 0.5) / H) * BANDS);
+      let m = 0;
+      for (let f = f0; f < f1; f += Math.max(1, Math.floor((f1 - f0) / 6))) m = Math.max(m, spec.mono[f * BANDS + b]);
+      const o = (y * W + x) * 4;
+      img.data[o] = img.data[o + 1] = img.data[o + 2] = m; img.data[o + 3] = 255;
+    }
+  }
+  stripBase = img;
+}
+function drawStrip(t) {
+  if (!stripBase || !spec) return;
+  sctx.putImageData(stripBase, 0, 0);
+  const x = t / spec.duration * strip.width;
+  const ahead = S.span / spec.duration * strip.width;
+  sctx.fillStyle = "rgba(228,251,2,0.18)";
+  sctx.fillRect(x, 0, ahead, strip.height);
+  sctx.fillStyle = "#e4fb02";
+  sctx.fillRect(x - 1, 0, 2, strip.height);
+}
+strip.addEventListener("click", (e) => {
+  if (!spec) return;
+  const r = strip.getBoundingClientRect();
+  seekTo((e.clientX - r.left) / r.width * spec.duration);
+});
+
+// ── Regard : glisser sur l'image ──
+let yaw = 0, pitch = 0, drag = null;
+canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, yaw, pitch }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  yaw = drag.yaw - (e.clientX - drag.x) * 0.004;
+  pitch = Math.max(-1.4, Math.min(1.4, drag.pitch - (e.clientY - drag.y) * 0.004));
+});
+canvas.addEventListener("pointerup", () => { drag = null; });
+canvas.addEventListener("dblclick", () => { yaw = 0; pitch = 0; });
+
+// ── Boucle ──
+let lastFrame = performance.now(), flowT = 0;
+function frame(nowMs) {
+  const dt = Math.min(0.1, (nowMs - lastFrame) / 1000); lastFrame = nowMs;
+  const t = now();
+  flowT += dt * S.flow;
+  uniforms.uTime.value = t;
+  uniforms.uFlowT.value = flowT;
+  // la caméra avance avec le son, et dérive un peu comme un insecte
+  const wz = nowMs / 1000;
+  const w = S.wander * S.radius;
+  const cx = w * 0.35 * (Math.sin(wz * 0.31) + 0.5 * Math.sin(wz * 0.73 + 1.3));
+  const cy = w * 0.25 * (Math.sin(wz * 0.23 + 2.1) + 0.5 * Math.sin(wz * 0.61));
+  camera.position.set(cx, cy, -t * S.speed);
+  const ly = yaw + S.wander * 0.25 * Math.sin(wz * 0.17 + 0.7);
+  const lp = pitch + S.wander * 0.15 * Math.sin(wz * 0.21 + 2.3);
+  const dir = new THREE.Vector3(-Math.sin(ly) * Math.cos(lp), Math.sin(lp), -Math.cos(ly) * Math.cos(lp));
+  camera.up.set(Math.sin(S.wander * 0.12 * Math.sin(wz * 0.13)), 1, 0).normalize();
+  camera.lookAt(camera.position.clone().add(dir));
+  composer.render(dt);
+  if (spec) {
+    drawStrip(t);
+    $("timeLabel").textContent = fmt(t);
+    if (!seeking) $("seek").value = t / spec.duration;
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── Exports ──
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = filename;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const baseName = () => `spectral-${(soundName || "sound").replace(/\.[^.]+$/, "")}-${fmt(now()).replace(":", "m")}s`;
+function exportPng() {
+  composer.render(0);
+  canvas.toBlob((blob) => downloadBlob(blob, `${baseName()}.png`), "image/png");
+}
+let recorder = null;
+async function toggleRecord() {
+  if (recorder) { recorder.stop(); return; }
+  if (!audio.src) return;
+  ensureAudioGraph();
+  const stream = canvas.captureStream(60);
+  for (const tr of streamDest.stream.getAudioTracks()) stream.addTrack(tr);
+  const type = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((t) => MediaRecorder.isTypeSupported(t));
+  const chunks = [];
+  const name = baseName();
+  recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 40_000_000 });
+  recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  recorder.onstop = () => {
+    downloadBlob(new Blob(chunks, { type: "video/webm" }), `${name}.webm`);
+    recorder = null;
+    $("recordBtn").classList.remove("recording");
+    $("recordBtn").textContent = "Record";
+  };
+  recorder.start(1000);
+  $("recordBtn").classList.add("recording");
+  $("recordBtn").textContent = "Stop";
+  if (audio.paused) await togglePlay();
+}
+audio.addEventListener("ended", () => { if (recorder) recorder.stop(); });
+
+// ── Événements ──
+$("panel").addEventListener("input", (e) => { if (e.target.id !== "count") readState(); });
+$("count").addEventListener("change", () => buildPoints(Math.round(parseFloat($("count").value) * 1000)));
+$("resSelect").addEventListener("change", runAnalysis);
+document.querySelectorAll(".palette").forEach((btn) => btn.addEventListener("click", () => {
+  const [a, b, c, f] = btn.dataset.colors.split(",");
+  $("c1").value = a; $("c2").value = b; $("c3").value = c; $("fogColor").value = f;
+  $("blend").value = btn.dataset.blend;
+  readState();
+}));
+$("playBtn").addEventListener("click", togglePlay);
+$("rewindBtn").addEventListener("click", () => seekTo(0));
+let seeking = false;
+$("seek").addEventListener("input", () => { seeking = true; if (spec) seekTo(parseFloat($("seek").value) * spec.duration); });
+$("seek").addEventListener("change", () => { seeking = false; });
+$("loadBtn").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", () => loadFile($("fileInput").files[0]));
+$("exportBtn").addEventListener("click", exportPng);
+$("recordBtn").addEventListener("click", toggleRecord);
+$("privacyBtn").addEventListener("click", () => $("privacyDialog").showModal());
+
+// déposer un son sur l'image
+window.addEventListener("dragover", (e) => { e.preventDefault(); document.body.classList.add("dragging"); });
+window.addEventListener("dragleave", (e) => { if (!e.relatedTarget) document.body.classList.remove("dragging"); });
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  document.body.classList.remove("dragging");
+  const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("audio/") || /\.(wav|aiff?|flac|mp3|ogg|m4a)$/i.test(f.name));
+  loadFile(file);
+});
+
+// clavier
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input[type=text], textarea")) return;
+  if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+  else if (e.key === "h" || e.key === "H") document.body.classList.toggle("panel-hidden");
+  else if (e.key === "ArrowRight") seekTo(now() + 5);
+  else if (e.key === "ArrowLeft") seekTo(now() - 5);
+  else if (e.key === "Home") seekTo(0);
+  else if (e.key === "p" || e.key === "P") exportPng();
+  else if (e.key === "r" || e.key === "R") toggleRecord();
+});
+
+// Réinitialiser : toutes les valeurs de la page au chargement
+const initial = Array.from(document.querySelectorAll("#panel input, #panel select")).map((el) => [el, el.type === "checkbox" ? el.checked : el.value]);
+$("resetBtn").addEventListener("click", () => {
+  const prevCount = $("count").value, prevRes = $("resSelect").value;
+  for (const [el, v] of initial) { if (el.type === "checkbox") el.checked = v; else el.value = v; }
+  yaw = pitch = 0;
+  readState();
+  if ($("count").value !== prevCount) buildPoints(Math.round(parseFloat($("count").value) * 1000));
+  if ($("resSelect").value !== prevRes) runAnalysis();
+});
+
+resize();
+readState();
+buildPoints(Math.round(S.count * 1000));
+requestAnimationFrame(frame);
+loadDefault();
+</script>
+</body>
+</html>
