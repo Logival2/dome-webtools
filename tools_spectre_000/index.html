@@ -29,22 +29,42 @@
      ce qui sort du bruit de fond (un cri, un appel) devient un « événement », repéré et suivi. -->
 <aside id="panel">
 
+  <!-- En-tête : retour, titre, tout replier / déplier -->
   <header id="panelHead">
-    <p class="eyebrow"><a class="badge backLink" href="../" title="Back to all tools">← Webtools</a></p>
-    <h1 class="toolTitle">Spectral<br>travel</h1>
+    <a class="backLink" href="../" title="Back to all tools">←</a>
+    <h1 id="miniTitle">Spectral travel</h1>
+    <button id="foldBtn" type="button" title="Fold or unfold every section">+</button>
   </header>
 
-  <!-- Son : ce que les particules montrent -->
-  <div class="section">
-    <h2>Sound</h2>
-    <div class="row"><label for="events" title="0 = the whole spectrogram · 1 = only what stands out from the background noise (calls, cries, clicks)">Events</label><input id="events" type="range" min="0" max="1" step="0.01" value="0.7" /></div>
-    <div class="row"><label for="sens" title="Low = only the loudest sounds · high = even faint ones">Sensitivity</label><input id="sens" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
-    <label class="check"><input id="stereo" type="checkbox" checked /><span>Stereo · left and right apart</span></label>
+  <!-- Lecture : le son entier en spectrogramme, lecteur, export -->
+  <div class="section" id="playSection">
+    <h2>Play</h2>
+    <canvas id="strip" width="460" height="120" title="The whole sound, as a spectrogram · click to jump"></canvas>
+    <div id="timeRow"><span id="timeLabel">0:00</span><span id="durLabel">0:00</span></div>
+    <input id="seek" type="range" min="0" max="1" step="0.001" value="0" aria-label="Position" />
+    <div id="transport">
+      <button id="rewindBtn" type="button" title="Back to the start · Home"><svg viewBox="0 0 10 10"><path d="M1 1h1.5v8H1zM9 1v8L3 5z"/></svg></button>
+      <button id="playBtn" type="button" title="Play / pause · Space"><svg viewBox="0 0 10 10"><path id="playIcon" d="M2 1l7 4-7 4z"/></svg></button>
+      <button id="loadBtn" type="button" title="Any sound file · or drop it on the image">Load</button>
+      <input id="fileInput" type="file" accept="audio/*,.wav,.aif,.aiff,.flac,.mp3,.ogg,.m4a" hidden />
+    </div>
+    <div id="exportRow">
+      <button id="exportBtn" type="button" title="Image of the current view · P">PNG</button>
+      <button id="recordBtn" type="button" title="Video with sound, from here until you stop · R">Record</button>
+    </div>
     <p class="hint" id="soundInfo"></p>
   </div>
 
+  <!-- Son : ce que les particules montrent -->
+  <div class="section collapsed">
+    <h2>Sound</h2>
+    <div class="row"><label for="events" title="0 = the whole spectrogram · 1 = only what stands out from the background noise (calls, cries, clicks)">Events</label><input id="events" type="range" min="0" max="1" step="0.01" value="0.7" /></div>
+    <div class="row"><label for="sens" title="Low = only the loudest sounds · high = even faint ones">Sensitivity</label><input id="sens" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
+    <label class="check" title="Left channel on the left, right channel on the right"><input id="stereo" type="checkbox" checked /><span>Stereo</span></label>
+  </div>
+
   <!-- Espace : la forme que prend le spectrogramme autour de la caméra -->
-  <div class="section">
+  <div class="section collapsed">
     <h2>Space</h2>
     <div class="row">
       <label for="shapeSelect">Shape</label>
@@ -54,21 +74,19 @@
         <option value="2">Terrain</option>
       </select>
     </div>
-    <p class="hint" id="shapeHint"></p>
     <div class="row"><label for="radius" title="Size of the space around the camera">Radius</label><input id="radius" type="range" min="0.5" max="10" step="0.05" value="3" /></div>
     <div class="row"><label for="relief" title="Loud sounds come closer to the camera">Relief</label><input id="relief" type="range" min="0" max="1.5" step="0.01" value="0.55" /></div>
   </div>
 
   <!-- Travelling : la caméra avance dans le temps du son -->
-  <div class="section">
+  <div class="section collapsed">
     <h2>Travel</h2>
     <div class="row"><label for="speed" title="Distance covered per second of sound">Speed</label><input id="speed" type="range" min="0.1" max="8" step="0.05" value="1.6" /></div>
-    <div class="row"><label for="wander" title="The camera drifts, like a flying insect">Wander</label><input id="wander" type="range" min="0" max="1" step="0.01" value="0.25" /></div>
-    <p class="hint">Drag on the image to look around, double-click to look ahead again.</p>
+    <div class="row"><label for="wander" title="The camera drifts, like a flying insect · drag on the image to look around, double-click to look ahead">Wander</label><input id="wander" type="range" min="0" max="1" step="0.01" value="0.25" /></div>
   </div>
 
   <!-- Matière : les points, leur dérive organique, les éclats sur les attaques -->
-  <div class="section">
+  <div class="section collapsed">
     <h2>Matter</h2>
     <div class="row"><label for="count" title="Number of particles (heavier above 1.5 M)">Points</label><input id="count" data-unit="k" type="range" min="100" max="3000" step="50" value="800" /></div>
     <div class="row"><label for="size" title="Size of a particle">Size</label><input id="size" type="range" min="0.003" max="0.12" step="0.001" value="0.022" /></div>
@@ -77,7 +95,7 @@
   </div>
 
   <!-- Rendu : palette, événements, halo, traînées -->
-  <div class="section">
+  <div class="section collapsed">
     <h2>Look</h2>
     <div class="btnRow" id="palettes">
       <button class="palette" type="button" data-palette="night">Night</button>
@@ -92,19 +110,19 @@
     <div class="row"><label for="trails" title="Each image lingers: streaks of motion (0 = off)">Trails</label><input id="trails" type="range" min="0" max="0.98" step="0.01" value="0" /></div>
   </div>
 
-  <!-- Données : suivi des événements, traits techniques -->
-  <div class="section">
+  <!-- Données : suivi des événements, traits techniques (inclus dans les exports) -->
+  <div class="section collapsed">
     <h2>Data</h2>
-    <label class="check"><input id="tracking" type="checkbox" checked /><span>Tracking · tags on the events</span></label>
-    <div class="row"><label for="tags" title="Most tags on screen at once">Tags</label><input id="tags" type="range" min="1" max="24" step="1" value="5" /></div>
-    <label class="check"><input id="links" type="checkbox" checked /><span>Links · events joined in time</span></label>
-    <label class="check"><input id="grid" type="checkbox" /><span>Grid · scales and readout</span></label>
-    <p class="hint">Tags and lines are included in PNG and video exports.</p>
+    <label class="check" title="Small marks and readings on the events"><input id="tracking" type="checkbox" checked /><span>Tracking</span></label>
+    <div class="row"><label for="tags" title="Most readings on screen at once">Tags</label><input id="tags" type="range" min="1" max="24" step="1" value="5" /></div>
+    <label class="check" title="Events joined in time order"><input id="links" type="checkbox" checked /><span>Links</span></label>
+    <label class="check" title="Frequency scale, seconds ahead, reticle, readout"><input id="grid" type="checkbox" /><span>Grid</span></label>
   </div>
 
   <footer id="panelFooter">
     <button id="resetBtn" type="button">Reset</button>
-    <button id="privacyBtn" type="button">Privacy · GDPR</button>
+    <span class="keys" title="Space play · ←/→ 5 s · P png · R record · H hide">H hide</span>
+    <button id="privacyBtn" type="button">GDPR</button>
   </footer>
 </aside>
 
@@ -123,26 +141,6 @@
     <button type="submit">Close</button>
   </form>
 </dialog>
-
-<!-- Panneau de droite, calé en bas : spectrogramme, lecteur, export -->
-<aside id="rightPanel">
-  <canvas id="strip" width="460" height="180" title="The whole sound, as a spectrogram · click to jump"></canvas>
-  <div id="timeRow" class="mono"><span id="timeLabel">0:00</span><span id="durLabel">0:00</span></div>
-  <input id="seek" type="range" min="0" max="1" step="0.001" value="0" aria-label="Position" />
-  <div id="transport">
-    <button id="rewindBtn" type="button" title="Back to the start · Home"><svg viewBox="0 0 10 10"><path d="M1 1h1.5v8H1zM9 1v8L3 5z"/></svg></button>
-    <button id="playBtn" type="button" title="Play / pause · Space"><svg viewBox="0 0 10 10"><path id="playIcon" d="M2 1l7 4-7 4z"/></svg></button>
-  </div>
-  <div class="btnRow">
-    <button id="loadBtn" type="button" title="Any sound file · or drop it on the image">Load sound</button>
-    <input id="fileInput" type="file" accept="audio/*,.wav,.aif,.aiff,.flac,.mp3,.ogg,.m4a" hidden />
-  </div>
-  <div id="exportRow">
-    <button id="exportBtn" type="button" title="Image of the current view · P">Export PNG</button>
-    <button id="recordBtn" type="button" title="Video with sound, from here until you stop · R">Record</button>
-  </div>
-  <p class="hint">Space play · ←/→ 5 s · H hide panels</p>
-</aside>
 
 <script type="module">
 // ═══════════════════════════════════════════════════════════════════
@@ -603,7 +601,7 @@ function readState() {
     "Height follows pitch: lows near the ground, highs in the treetops, on both sides of a clearing.",
     "Lows in the middle, highs towards the edges; the ground rises with the volume.",
   ];
-  $("shapeHint").textContent = hints[S.shape];
+  $("shapeSelect").closest(".row").title = hints[S.shape];   // l'explication passe en infobulle
 }
 
 // ── Taille de l'écran ──
@@ -683,7 +681,7 @@ async function runAnalysis() {
     uniforms.uFps.value = spec.fps; uniforms.uDur.value = spec.duration;
     drawStripBase();
     $("durLabel").textContent = fmt(spec.duration);
-    $("soundInfo").textContent = `${soundName} · ${fmt(spec.duration)} · ${audioBuffer.numberOfChannels === 1 ? "mono" : "stereo"} · ${audioBuffer.sampleRate} Hz\n${spec.peaks.length.toLocaleString("en")} events found`;
+    $("soundInfo").textContent = `${soundName} · ${audioBuffer.numberOfChannels === 1 ? "mono" : "stereo"} · ${spec.peaks.length.toLocaleString("en")} events`;
     setStatus("");
     // ?t=42 : ouvre la page à 42 s du son
     const askedT = parseFloat(new URLSearchParams(location.search).get("t"));
@@ -790,7 +788,7 @@ function drawData(t) {
   if (!spec || (!S.tracking && !S.grid)) return;
   // traits fins, petit texte en mono, peu d'opacité : la donnée se devine plus qu'elle ne s'impose
   c.lineWidth = 0.75 * u;
-  c.font = `${9.5 * u}px "Roboto Mono", monospace`;
+  c.font = `${9.5 * u}px "Replica Mono", monospace`;
   c.textBaseline = "middle";
   const inkA = (a) => ink === "#ffffff" ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
 
@@ -1011,6 +1009,22 @@ $("fileInput").addEventListener("change", () => loadFile($("fileInput").files[0]
 $("exportBtn").addEventListener("click", exportPng);
 $("recordBtn").addEventListener("click", toggleRecord);
 $("privacyBtn").addEventListener("click", () => $("privacyDialog").showModal());
+// tout replier / tout déplier ; le bouton montre ce qu'un clic fera
+const sections = () => Array.from(document.querySelectorAll("#panel .section"));
+function paintFold() {
+  const allClosed = sections().every((s) => s.classList.contains("collapsed"));
+  $("foldBtn").textContent = allClosed ? "+" : "–";
+}
+$("foldBtn").addEventListener("click", () => {
+  const close = !sections().every((s) => s.classList.contains("collapsed"));
+  for (const s of sections()) {
+    s.classList.toggle("collapsed", close);
+    s.querySelector(":scope > h2")?.setAttribute("aria-expanded", String(!close));
+  }
+  paintFold();
+});
+document.querySelectorAll("#panel .section > h2").forEach((h) => h.addEventListener("click", () => requestAnimationFrame(paintFold)));
+paintFold();
 
 // déposer un son sur l'image
 window.addEventListener("dragover", (e) => { e.preventDefault(); document.body.classList.add("dragging"); });
@@ -1035,7 +1049,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 // Réinitialiser : toutes les valeurs de la page au chargement
-const initial = Array.from(document.querySelectorAll("#panel input, #panel select")).map((el) => [el, el.type === "checkbox" ? el.checked : el.value]);
+// (le lecteur n'est pas un réglage : la position et le fichier choisi restent tels quels)
+const initial = Array.from(document.querySelectorAll("#panel .section:not(#playSection) :is(input, select)")).map((el) => [el, el.type === "checkbox" ? el.checked : el.value]);
 $("resetBtn").addEventListener("click", () => {
   const prevCount = $("count").value;
   for (const [el, v] of initial) { if (el.type === "checkbox") el.checked = v; else el.value = v; }

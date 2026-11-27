@@ -1,82 +1,164 @@
 /* Spectral travel — mise en page propre à l'outil.
-   Couleurs, typo, panneaux et contrôles : ../ui/ui_001.css
-   Le rendu occupe tout l'écran, les panneaux flottent devant. */
+   Base commune : ui/ui_001.css (verre, sliders, pilules, volets). Ici, une version réduite :
+   un seul panneau, petit, en Replica Mono, verre sombre et transparent posé sur le rendu plein écran. */
 
+@font-face {
+  font-family: "Replica Mono";
+  src: url("fonts/Replica-Mono.otf") format("opentype");
+  font-display: swap;
+}
+
+/* Verre sombre et léger : texte, filets et curseurs en blanc */
+:root {
+  --sans: "Replica Mono", monospace;
+  --mono: "Replica Mono", monospace;
+  --title: "Replica Mono", monospace;
+  --fs-text: 10px;
+  --fs-small: 9px;
+  --fs-mono: 9px;
+  --glass: rgba(10, 10, 12, 0.32);
+  --blur: 14px;
+  --text: #fff;
+  --line: #fff;
+  --line-faint: rgba(255, 255, 255, 0.22);
+  --dash: rgba(255, 255, 255, 0.18);
+  --pill: rgba(255, 255, 255, 0.08);
+  --ink: #fff;
+  --ink-faint: rgba(255, 255, 255, 0.25);
+  --pad: 8px;
+}
 html, body { background: #000; }
 
-/* Rendu sombre : verre clair et plus flou, pour que le texte noir reste lisible */
-:root {
-  --glass: rgba(190, 190, 190, 0.7);
-  --blur: 20px;
-}
-
-/* Le rendu occupe tout l'écran, derrière les panneaux */
-#gl {
-  position: fixed;
-  inset: 0;
-  display: block;
-  width: 100vw;
-  height: 100vh;
-  cursor: grab;
-}
-#gl:active { cursor: grabbing; }
-
-/* Calque de données (suivi, traits techniques) : par-dessus le rendu, sous les panneaux, ne capte pas la souris */
+/* Le rendu et le calque de données occupent tout l'écran, derrière le panneau */
+#gl,
 #overlay {
   position: fixed;
   inset: 0;
   display: block;
   width: 100vw;
   height: 100vh;
-  pointer-events: none;
 }
+#gl { cursor: grab; }
+#gl:active { cursor: grabbing; }
+#overlay { pointer-events: none; }   /* calque de données : ne capte pas la souris */
 
-/* Palette choisie : blanche, comme une pilule active */
-#palettes .palette[aria-pressed="true"] { background: var(--ink) !important; }
-
-/* Panneaux en verre posés sur le rendu ; H les masque */
+/* ── Le panneau unique : petit, en haut à gauche ; H le masque ── */
 #panel {
   position: fixed;
   top: 0;
   left: 0;
-  max-height: calc(100vh - 20px);
-  transition: opacity 0.3s cubic-bezier(0.4, 0, 0, 1), transform 0.6s cubic-bezier(0.4, 0, 0, 1), visibility 0.6s;
-}
-#rightPanel {
-  position: fixed;
-  right: 0;
-  bottom: 0;
+  width: 228px;
+  margin: 8px;
+  max-height: calc(100vh - 16px);
+  line-height: 1.25;
   transition: opacity 0.3s cubic-bezier(0.4, 0, 0, 1), transform 0.6s cubic-bezier(0.4, 0, 0, 1), visibility 0.6s;
 }
 body.panel-hidden #panel {
   opacity: 0;
   visibility: hidden;
-  transform: translateX(-16px);
+  transform: translateX(-12px);
 }
-body.panel-hidden #rightPanel {
-  opacity: 0;
-  visibility: hidden;
-  transform: translateX(16px);
+
+/* En-tête sur une ligne : ←, titre, tout replier */
+#panelHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px var(--pad);
 }
+#panelHead .backLink { color: inherit; text-decoration: none; }
+#miniTitle {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-text);
+  font-weight: 400;
+  white-space: nowrap;
+}
+#panel #foldBtn {
+  min-height: 0;
+  width: 18px;
+  height: 16px;
+  padding: 0;
+  line-height: 1;
+  background: none;
+}
+
+/* Sections serrées */
+.section {
+  gap: 4px;
+  padding: 0 var(--pad) 7px;
+}
+.section > h2 { padding: 5px var(--pad); }
+.row { column-gap: 6px; }
+.row:has(> output) { grid-template-columns: 38% minmax(0, 1fr) 3.4em; }
+.row:has(> .pills) { row-gap: 4px; }
+input[type="range"] { height: 12px; }
+input[type="range"]::-webkit-slider-thumb { width: 7px; height: 7px; margin-top: -3px; }
+input[type="range"]::-moz-range-thumb { width: 7px; height: 7px; }
+input[type="checkbox"] { width: 22px; height: 12px; }
+input[type="checkbox"]::after { top: 2px; left: 2px; width: 8px; height: 8px; }
+input[type="checkbox"]:checked::after { transform: translateX(10px); background: #000; }
+
+/* Boutons : petites pilules ; le choix actif est blanc, son texte noir */
+#panel button {
+  min-height: 20px;
+  padding: 1px 8px;
+}
+#panel #transport button,
+#panel .pills button {
+  min-height: 20px;
+  padding: 1px 6px;
+}
+.pills button[aria-pressed="true"],
+#palettes .palette[aria-pressed="true"] {
+  background: var(--ink) !important;
+  color: #000 !important;
+}
+#transport svg { width: 8px; height: 8px; }
+
+/* Export : le vert reste pour l'action principale, en petit */
+#exportRow #exportBtn {
+  min-height: 22px;
+  color: #000;
+}
+#exportRow > button { min-height: 22px; }
+#recordBtn.recording { background: #ff3b1f !important; color: #fff !important; }
 
 /* Spectrogramme 2D du fichier entier, tête de lecture, clic pour se déplacer */
 #strip {
   display: block;
   width: 100%;
-  height: 90px;
+  height: 54px;
   background: #000;
   cursor: pointer;
 }
-
-/* Infos du son sur deux lignes */
-#soundInfo { white-space: pre-line; }
-
-/* Lecteur : temps et barre */
 #timeRow {
   display: flex;
   justify-content: space-between;
+  font-size: var(--fs-small);
 }
 #seek { width: 100%; }
+#soundInfo { opacity: 0.6; }
+
+/* Pied : Reset, raccourcis, RGPD */
+#panelFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px var(--pad);
+  border-top: 1px dashed var(--dash);
+}
+#panelFooter button { background: none !important; padding: 0 !important; min-height: 0 !important; }
+#panelFooter .keys { opacity: 0.5; }
+
+/* Fenêtre RGPD : fond blanc, donc texte et filets noirs */
+dialog {
+  --text: #000;
+  --line: #000;
+  --dash: rgba(0, 0, 0, 0.45);
+  color: #000;
+}
 
 /* Message au centre : analyse en cours, fichier à déposer */
 #status {
@@ -86,11 +168,9 @@ body.panel-hidden #rightPanel {
   transform: translate(-50%, -50%);
   z-index: 0;
   max-width: 420px;
+  font-size: var(--fs-text);
   color: #fff;
   text-align: center;
   pointer-events: none;
 }
 body.dragging #gl { outline: 1px dashed #fff; outline-offset: -12px; }
-
-/* Enregistrement en cours : le bouton passe en rouge */
-#recordBtn.recording { background: #ff3b1f !important; color: #fff !important; }
