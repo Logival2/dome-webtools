@@ -432,6 +432,24 @@ async function analyse(buffer, N) {
     });
     p.az = Math.round(Math.atan2(vx, vy) * 180 / Math.PI);
   }
+  // ── Regroupement : plutôt que beaucoup de petites anomalies, quelques grosses ──
+  // Les pics dont les zones se touchent ou sont proches (≤ 0,6 s et ≤ 30 bandes d'écart) forment une seule
+  // anomalie : sa zone est l'union des leurs (bornée à 5 s), ses valeurs sont celles du pic le plus fort.
+  // Un pic isolé et faible est écarté.
+  const gapT = 0.6, gapB = 30 / (BANDS - 1), maxSpan = 5;
+  const groups = [];
+  for (const p of [...peaks].sort((a, b) => b.v - a.v)) {
+    const g = groups.find((q) =>
+      p.t0 < q.t1 + gapT && p.t1 > q.t0 - gapT && p.lo < q.hi + gapB && p.hi > q.lo - gapB &&
+      Math.max(q.t1, p.t1) - Math.min(q.t0, p.t0) <= maxSpan);
+    if (g) {
+      g.t0 = Math.min(g.t0, p.t0); g.t1 = Math.max(g.t1, p.t1);
+      g.lo = Math.min(g.lo, p.lo); g.hi = Math.max(g.hi, p.hi);
+      g.n++;
+    } else groups.push({ ...p, n: 1 });
+  }
+  peaks.length = 0;
+  for (const g of groups) if (g.n >= 2 || g.v >= 0.5) peaks.push(g);
   // énergie de chaque canal, image par image (pour le radar de l'onglet Channels)
   const energy = new Float32Array(frames * C);
   for (let c = 0; c < C; c++) for (let f = 0; f < frames; f++) {
@@ -770,7 +788,7 @@ async function runAnalysis() {
     drawStripBase();
     drawChannelsBase();
     $("durLabel").textContent = fmt(spec.duration);
-    $("soundInfo").textContent = `${soundName} · ${audioBuffer.numberOfChannels === 1 ? "mono" : "stereo"} · ${spec.peaks.length.toLocaleString("en")} events`;
+    $("soundInfo").textContent = `${soundName} · ${spec.channels.layout.name} · ${spec.peaks.length.toLocaleString("en")} anomalies`;
     setStatus("");
     // ?t=42 : ouvre la page à 42 s du son
     const askedT = parseFloat(new URLSearchParams(location.search).get("t"));
@@ -1099,8 +1117,9 @@ function drawData(t) {
     }
     c.stroke();
     // étiquette en verre : identifiant, fréquence, niveau au-dessus du fond
-    // une seule donnée par anomalie : son numéro (fréquence, niveau et direction restent dans spec.peaks)
-    const text = String(pk.id).padStart(4, "0");
+    // numéro, fréquence du pic, niveau au-dessus du fond, durée de l'anomalie ; avec plus de deux canaux, sa direction
+    const azTxt = spec.channels.C > 2 ? `  ${pk.az > 0 ? "+" : ""}${pk.az}°` : "";
+    const text = `${String(pk.id).padStart(4, "0")}  ${fmtHz(pk.hz)}  +${Math.round(pk.dB)}dB  ${(pk.t1 - pk.t0).toFixed(1)}s${azTxt}`;
     const padX = 7 * u, tw = c.measureText(text).width, bw = tw + 2 * padX, bh = 18 * u, gap = 4 * u;
     // place libre : du côté extérieur d'abord, en montant puis en descendant ; sinon l'autre côté ; sinon rien
     let spot = null;
