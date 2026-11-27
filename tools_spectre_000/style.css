@@ -138,6 +138,22 @@ input[type="checkbox"]:checked::after { transform: translateX(13px); background:
   font-size: var(--fs-small);
 }
 #seek { width: 100%; }
+
+/* Onglet Channels : spectrogrammes empilés (un par canal), radar vu de dessus */
+#chanView {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #000;
+  cursor: pointer;
+}
+#radar {
+  display: block;
+  width: 62%;
+  height: auto;
+  margin: 2px auto 0;
+}
+#chanInfo { opacity: 0.6; }
 #soundInfo { opacity: 0.6; }
 
 /* Pied : Reset, raccourcis, RGPD */

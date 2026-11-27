@@ -55,6 +55,14 @@
     <p class="hint" id="soundInfo"></p>
   </div>
 
+  <!-- Canaux : le spectre spatialisé, un spectrogramme par haut-parleur, et un radar vu de dessus -->
+  <div class="section collapsed" id="chanSection">
+    <h2>Channels</h2>
+    <canvas id="chanView" width="460" height="300" title="One spectrogram per channel · click to jump"></canvas>
+    <canvas id="radar" width="320" height="320" title="Seen from above, front at the top: energy of each speaker, the direction the sound comes from, and the events near the playhead"></canvas>
+    <p class="hint" id="chanInfo"></p>
+  </div>
+
   <!-- Son : ce que les particules montrent -->
   <div class="section collapsed">
     <h2>Sound</h2>
@@ -241,11 +249,26 @@ function makeFFT(n) {
   };
 }
 
+// Dispositions connues, selon le nombre de canaux du fichier : nom et direction (azimut en degrés,
+// 0 = devant, négatif = à gauche ; null = caisson de graves, sans direction)
+const LAYOUTS = {
+  1: { name: "mono", ch: [["C", 0]] },
+  2: { name: "stereo", ch: [["L", -30], ["R", 30]] },
+  4: { name: "quad", ch: [["L", -45], ["R", 45], ["Ls", -135], ["Rs", 135]] },
+  5: { name: "5.0", ch: [["L", -30], ["R", 30], ["C", 0], ["Ls", -110], ["Rs", 110]] },
+  6: { name: "5.1", ch: [["L", -30], ["R", 30], ["C", 0], ["LFE", null], ["Ls", -110], ["Rs", 110]] },
+};
+function layoutFor(count) {
+  if (LAYOUTS[count]) return LAYOUTS[count];
+  // autre nombre : canaux répartis régulièrement en cercle
+  return { name: `${count} ch`, ch: Array.from({ length: count }, (_, i) => [`${i + 1}`, Math.round(-180 + 360 * (i + 0.5) / count)]) };
+}
+
 async function analyse(buffer, N) {
   const sr = buffer.sampleRate, hop = N / 2;
-  const L = buffer.getChannelData(0);
-  const R = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : L;
-  const frames = Math.max(1, Math.floor((L.length - N) / hop) + 1);
+  const C = buffer.numberOfChannels, layout = layoutFor(C);
+  const chans = Array.from({ length: C }, (_, c) => buffer.getChannelData(c));
+  const frames = Math.max(1, Math.floor((chans[0].length - N) / hop) + 1);
   const fft = makeFFT(N);
   const win = new Float32Array(N);
   for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
@@ -255,18 +278,22 @@ async function analyse(buffer, N) {
     lo[b] = FMIN * Math.pow(FMAX / FMIN, b / BANDS) / sr * N;
     hi[b] = FMIN * Math.pow(FMAX / FMIN, (b + 1) / BANDS) / sr * N;
   }
-  const db = [new Float32Array(frames * BANDS), new Float32Array(frames * BANDS)];
+  // chaque canal est analysé ; la 3D garde un côté gauche et un côté droit : chaque canal y verse
+  // sa puissance selon sa direction (à gauche → gauche, devant → moitié-moitié, à droite → droite)
+  const wL = layout.ch.map(([, az]) => az === null ? 0 : az < -5 ? 1 : az > 5 ? 0 : 0.5);
+  const wR = layout.ch.map(([, az]) => az === null ? 0 : az > 5 ? 1 : az < -5 ? 0 : 0.5);
+  const n = frames * BANDS;
+  const powL = new Float32Array(n), powR = new Float32Array(n);
+  const chDb = Array.from({ length: C }, () => new Uint8Array(n));   // dB de chaque canal, au demi-dB, de −120 à +7
   const re = new Float32Array(N), im = new Float32Array(N), mag = new Float32Array(N / 2 + 1);
   const norm = 2 / N * 2; // Hann ≈ ½ d'amplitude
-  const chans = [L, R];
   let t0 = performance.now();
   for (let f = 0; f < frames; f++) {
-    for (let c = 0; c < 2; c++) {
+    for (let c = 0; c < C; c++) {
       const x = chans[c], off = f * hop;
       for (let i = 0; i < N; i++) { re[i] = (x[off + i] || 0) * win[i]; im[i] = 0; }
       fft(re, im);
       for (let k = 0; k <= N / 2; k++) mag[k] = Math.hypot(re[k], im[k]) * norm;
-      const out = db[c];
       for (let b = 0; b < BANDS; b++) {
         let m;
         if (hi[b] - lo[b] < 1) {                 // bande plus fine qu'un bin : interpolation
@@ -276,15 +303,19 @@ async function analyse(buffer, N) {
           m = 0;
           for (let k = Math.floor(lo[b]); k <= Math.min(N / 2, Math.ceil(hi[b])); k++) if (mag[k] > m) m = mag[k];
         }
-        out[f * BANDS + b] = 20 * Math.log10(m + 1e-9);
+        const i = f * BANDS + b, pw = m * m;
+        powL[i] += pw * wL[c]; powR[i] += pw * wR[c];
+        chDb[c][i] = Math.min(255, Math.max(0, (10 * Math.log10(pw + 1e-18) + 120) * 2));
       }
     }
     if (performance.now() - t0 > 30) {           // on rend la main au navigateur
-      setStatus(`Analysing the sound… ${Math.round(f / frames * 100)} %`);
+      setStatus(`Analysing the sound (${layout.name})… ${Math.round(f / frames * 100)} %`);
       await new Promise((r) => setTimeout(r));
       t0 = performance.now();
     }
   }
+  const db = [new Float32Array(n), new Float32Array(n)];
+  for (let i = 0; i < n; i++) { db[0][i] = 10 * Math.log10(powL[i] + 1e-18); db[1][i] = 10 * Math.log10(powR[i] + 1e-18); }
   // niveau de référence : le haut du spectre (99,5e centile), puis 72 dB de dynamique
   const sample = [];
   for (let i = 0; i < db[0].length; i += 97) sample.push(db[0][i], db[1][i]);
@@ -292,7 +323,6 @@ async function analyse(buffer, N) {
   const top = sample[Math.floor(sample.length * 0.995)], range = 72, bottom = top - range;
 
   // niveaux 0…1 : gauche, droite, moyenne
-  const n = frames * BANDS;
   const vL = new Float32Array(n), vR = new Float32Array(n), vM = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     vL[i] = Math.min(1, Math.max(0, (db[0][i] - bottom) / range));
@@ -386,6 +416,29 @@ async function analyse(buffer, N) {
     p.t0 = f0 / fps; p.t1 = (f1 + 1) / fps;
     p.lo = b0 / (BANDS - 1); p.hi = b1 / (BANDS - 1);
   }
+  // direction de chaque événement : la puissance de chaque canal autour du pic (3 × 3), chaque canal
+  // tirant vers sa direction ; la somme des vecteurs donne l'azimut d'où vient le son
+  const chPow = (c, i) => Math.pow(10, (chDb[c][i] / 2 - 120) / 10);
+  for (const p of peaks) {
+    let vx = 0, vy = 0;
+    layout.ch.forEach(([, az], c) => {
+      if (az === null) return;
+      let w = 0;
+      for (let df = -1; df <= 1; df++) for (let dbd = -1; dbd <= 1; dbd++) {
+        const ff = p.f + df, bb = p.b + dbd;
+        if (ff >= 0 && ff < frames && bb >= 0 && bb < BANDS) w += chPow(c, ff * BANDS + bb);
+      }
+      vx += w * Math.sin(az * Math.PI / 180); vy += w * Math.cos(az * Math.PI / 180);
+    });
+    p.az = Math.round(Math.atan2(vx, vy) * 180 / Math.PI);
+  }
+  // énergie de chaque canal, image par image (pour le radar de l'onglet Channels)
+  const energy = new Float32Array(frames * C);
+  for (let c = 0; c < C; c++) for (let f = 0; f < frames; f++) {
+    let s = 0;
+    for (let b = 0; b < BANDS; b++) s += Math.min(1, Math.max(0, (chDb[c][f * BANDS + b] / 2 - 120 - bottom) / range));
+    energy[f * C + c] = s / BANDS;
+  }
   peaks.sort((a, b) => a.t - b.t);
   peaks.forEach((p, j) => { p.id = j + 1; });
 
@@ -411,7 +464,8 @@ async function analyse(buffer, N) {
   const tex = new THREE.DataTexture(data, texW, texH, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.minFilter = tex.magFilter = THREE.NearestFilter;
   tex.needsUpdate = true;
-  return { tex, frames, fps, K, duration: buffer.duration, mono, events, peaks, N };
+  return { tex, frames, fps, K, duration: buffer.duration, mono, events, peaks, N,
+    channels: { layout, C, chDb, energy, bottom, range } };
 }
 
 // ── Particules ──
@@ -714,6 +768,7 @@ async function runAnalysis() {
     uniforms.uSpec.value = spec.tex; uniforms.uK.value = spec.K; uniforms.uFrames.value = spec.frames;
     uniforms.uFps.value = spec.fps; uniforms.uDur.value = spec.duration;
     drawStripBase();
+    drawChannelsBase();
     $("durLabel").textContent = fmt(spec.duration);
     $("soundInfo").textContent = `${soundName} · ${audioBuffer.numberOfChannels === 1 ? "mono" : "stereo"} · ${spec.peaks.length.toLocaleString("en")} events`;
     setStatus("");
@@ -732,11 +787,11 @@ async function loadFile(file) {
 }
 // son de départ, rangé avec l'outil ; en local (file://) le navigateur refuse : on dépose le fichier
 async function loadDefault() {
-  const url = "audio/FILE8654.wav";
+  const url = "audio/FILE8654_5.0.flac";   // version 5.0 (L R C Ls Rs), tirée une fois du stéréo d'origine
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(res.status);
-    await loadSound(await res.arrayBuffer(), "FILE8654.wav", url);
+    await loadSound(await res.arrayBuffer(), "FILE8654_5.0.flac", url);
   } catch {
     setStatus("Drop a sound file on the image, or use Load sound.");
   }
@@ -793,6 +848,106 @@ function drawStrip(t) {
 strip.addEventListener("click", (e) => {
   if (!spec) return;
   const r = strip.getBoundingClientRect();
+  seekTo((e.clientX - r.left) / r.width * spec.duration);
+});
+
+// ── Onglet Channels : un spectrogramme par canal, empilés, et un radar vu de dessus ──
+const chanView = $("chanView"), cvctx = chanView.getContext("2d");
+const radar = $("radar"), rctx = radar.getContext("2d");
+let chanBase = null;
+// les canaux dans l'ordre de l'espace, de gauche à droite en passant par l'arrière : Ls, L, C, R, Rs
+const chanOrder = () => {
+  const L = spec.channels.layout.ch;
+  return L.map((c, i) => i).filter((i) => L[i][1] !== null)
+    .sort((a, b) => { const k = (az) => (az + 360) % 360 > 180 ? (az + 360) % 360 - 360 : az; return k(L[a][1]) - k(L[b][1]); })
+    .concat(L.map((c, i) => i).filter((i) => L[i][1] === null));
+};
+function drawChannelsBase() {
+  const ch = spec.channels, order = chanOrder(), C = order.length;
+  const W = chanView.width, lane = Math.floor(chanView.height / C), H = lane * C;
+  const img = cvctx.createImageData(W, chanView.height);
+  order.forEach((c, row) => {
+    const q = ch.chDb[c];
+    for (let x = 0; x < W; x++) {
+      const f0 = Math.floor(x / W * spec.frames), f1 = Math.max(f0 + 1, Math.floor((x + 1) / W * spec.frames));
+      for (let y = 0; y < lane - 2; y++) {
+        const b = Math.floor((1 - (y + 0.5) / (lane - 2)) * BANDS);
+        let m = 0;
+        for (let f = f0; f < f1; f += Math.max(1, Math.floor((f1 - f0) / 6))) m = Math.max(m, q[f * BANDS + b]);
+        // contraste : le fond de bruit reste sombre, les cris ressortent
+        const v = Math.max(0, ((m / 2 - 120 - ch.bottom) / ch.range - 0.3) / 0.7);
+        const [r, g, bl] = heat(Math.pow(v, 1.6));
+        const o = ((row * lane + y) * W + x) * 4;
+        img.data[o] = r; img.data[o + 1] = g; img.data[o + 2] = bl; img.data[o + 3] = 255;
+      }
+    }
+  });
+  chanBase = { img, lane, order, H };
+  const L = ch.layout.ch;
+  $("chanInfo").textContent = `${ch.layout.name} · ${order.map((c) => L[c][0]).join(" ")} · ${spec.peaks.length} events located`;
+}
+function drawChannels(t) {
+  if (!chanBase || !spec) return;
+  const { img, lane, order } = chanBase, ch = spec.channels, L = ch.layout.ch;
+  // spectrogrammes empilés, nom de chaque canal, tête de lecture
+  cvctx.putImageData(img, 0, 0);
+  cvctx.font = `20px "Replica Mono", monospace`;
+  cvctx.textBaseline = "top";
+  order.forEach((c, row) => {
+    cvctx.fillStyle = "rgba(0,0,0,0.55)";
+    cvctx.fillRect(4, row * lane + 4, cvctx.measureText(L[c][0]).width + 10, 24);
+    cvctx.fillStyle = "#fff";
+    cvctx.fillText(L[c][0], 9, row * lane + 7);
+  });
+  const x = t / spec.duration * chanView.width;
+  cvctx.fillStyle = "#e4fb02";
+  cvctx.fillRect(x - 1, 0, 2, chanView.height);
+
+  // radar : vu de dessus, l'avant en haut ; un point par haut-parleur, grossi par son énergie
+  const W = radar.width, cx = W / 2, cy = W / 2, R = W * 0.36;
+  rctx.clearRect(0, 0, W, W);
+  rctx.strokeStyle = "rgba(255,255,255,0.25)"; rctx.lineWidth = 1.5;
+  rctx.beginPath(); rctx.arc(cx, cy, R, 0, Math.PI * 2); rctx.stroke();
+  rctx.beginPath(); rctx.arc(cx, cy, R * 0.5, 0, Math.PI * 2); rctx.stroke();
+  rctx.beginPath(); rctx.moveTo(cx, cy - R - 8); rctx.lineTo(cx, cy - R + 8); rctx.stroke();   // repère : l'avant
+  const f = Math.min(spec.frames - 1, Math.max(0, Math.round(t * spec.fps)));
+  let vx = 0, vy = 0, sum = 0, maxE = 1e-6;
+  L.forEach(([, az], c) => { if (az !== null) maxE = Math.max(maxE, ch.energy[f * ch.C + c]); });
+  rctx.font = `22px "Replica Mono", monospace`;
+  rctx.textAlign = "center"; rctx.textBaseline = "middle";
+  L.forEach(([name, az], c) => {
+    if (az === null) return;
+    const e = ch.energy[f * ch.C + c];
+    const a = az * Math.PI / 180, px = cx + Math.sin(a) * R, py = cy - Math.cos(a) * R;
+    vx += e * Math.sin(a); vy += e * Math.cos(a); sum += e;
+    // taille relative au canal le plus fort de l'instant : on voit d'où vient le son, pas son volume
+    const rel = Math.pow(e / maxE, 3);
+    rctx.fillStyle = `rgba(255,255,255,${0.3 + 0.7 * rel})`;
+    rctx.beginPath(); rctx.arc(px, py, 3 + 13 * rel, 0, Math.PI * 2); rctx.fill();
+    rctx.fillStyle = "rgba(255,255,255,0.8)";
+    rctx.fillText(name, cx + Math.sin(a) * (R + 36), cy - Math.cos(a) * (R + 36));
+  });
+  // direction d'ensemble : la somme des haut-parleurs pondérés par leur énergie
+  if (sum > 0) {
+    const len = Math.hypot(vx, vy) / sum;
+    const a = Math.atan2(vx, vy);
+    rctx.strokeStyle = "#e4fb02"; rctx.lineWidth = 3;
+    rctx.beginPath(); rctx.moveTo(cx, cy); rctx.lineTo(cx + Math.sin(a) * R * len * 1.6, cy - Math.cos(a) * R * len * 1.6); rctx.stroke();
+  }
+  // événements autour de la tête de lecture (±0,6 s) : un trait vers leur direction
+  const from = firstAfter(spec.peaks, t - 0.6), to = firstAfter(spec.peaks, t + 0.6);
+  for (let j = from; j < to; j++) {
+    const pk = spec.peaks[j], a = pk.az * Math.PI / 180, k = 1 - Math.abs(pk.t - t) / 0.6;
+    rctx.strokeStyle = `rgba(255,255,255,${0.9 * k})`; rctx.lineWidth = 2;
+    rctx.beginPath();
+    rctx.moveTo(cx + Math.sin(a) * R * 0.55, cy - Math.cos(a) * R * 0.55);
+    rctx.lineTo(cx + Math.sin(a) * R * 0.95, cy - Math.cos(a) * R * 0.95);
+    rctx.stroke();
+  }
+}
+chanView.addEventListener("click", (e) => {
+  if (!spec) return;
+  const r = chanView.getBoundingClientRect();
   seekTo((e.clientX - r.left) / r.width * spec.duration);
 });
 
@@ -944,7 +1099,9 @@ function drawData(t) {
     }
     c.stroke();
     // étiquette en verre : identifiant, fréquence, niveau au-dessus du fond
-    const text = `${String(pk.id).padStart(4, "0")}  ${fmtHz(pk.hz)}  +${Math.round(pk.dB)}dB`;
+    // avec plus de deux canaux, on ajoute la direction d'où vient le son (0° = devant, négatif = à gauche)
+    const azTxt = spec.channels.C > 2 ? `  ${pk.az > 0 ? "+" : ""}${pk.az}°` : "";
+    const text = `${String(pk.id).padStart(4, "0")}  ${fmtHz(pk.hz)}  +${Math.round(pk.dB)}dB${azTxt}`;
     const padX = 7 * u, tw = c.measureText(text).width, bw = tw + 2 * padX, bh = 18 * u, gap = 4 * u;
     // place libre : du côté extérieur d'abord, en montant puis en descendant ; sinon l'autre côté ; sinon rien
     let spot = null;
@@ -1018,6 +1175,7 @@ function frame(nowMs) {
   if (recorder) composite();
   if (spec) {
     drawStrip(t);
+    if (!$("chanSection").classList.contains("collapsed")) drawChannels(t);   // seulement onglet ouvert
     $("timeLabel").textContent = fmt(t);
     if (!seeking) $("seek").value = t / spec.duration;
   }
