@@ -96,7 +96,7 @@
   <div class="section">
     <h2>Data</h2>
     <label class="check"><input id="tracking" type="checkbox" checked /><span>Tracking · tags on the events</span></label>
-    <div class="row"><label for="tags" title="Most tags on screen at once">Tags</label><input id="tags" type="range" min="1" max="24" step="1" value="7" /></div>
+    <div class="row"><label for="tags" title="Most tags on screen at once">Tags</label><input id="tags" type="range" min="1" max="24" step="1" value="5" /></div>
     <label class="check"><input id="links" type="checkbox" checked /><span>Links · events joined in time</span></label>
     <label class="check"><input id="grid" type="checkbox" /><span>Grid · scales and readout</span></label>
     <p class="hint">Tags and lines are included in PNG and video exports.</p>
@@ -788,16 +788,17 @@ function drawData(t) {
   const c = octx, W = overlay.width, H = overlay.height, u = PR;
   c.clearRect(0, 0, W, H);
   if (!spec || (!S.tracking && !S.grid)) return;
-  c.lineWidth = u;
-  c.font = `${11 * u}px "Nord SemiBold", serif`;
+  // traits fins, petit texte en mono, peu d'opacité : la donnée se devine plus qu'elle ne s'impose
+  c.lineWidth = 0.75 * u;
+  c.font = `${9.5 * u}px "Roboto Mono", monospace`;
   c.textBaseline = "middle";
   const inkA = (a) => ink === "#ffffff" ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
 
   // ── Grille : graduations de fréquence sur la paroi, secondes au sol, réticule, lecture ──
   if (S.grid) {
-    c.strokeStyle = inkA(0.35); c.fillStyle = inkA(0.75);
+    c.strokeStyle = inkA(0.18); c.fillStyle = inkA(0.4);
     // réticule au centre
-    const cx = W / 2, cy = H / 2, g = 6 * u, l = 14 * u;
+    const cx = W / 2, cy = H / 2, g = 5 * u, l = 7 * u;
     c.beginPath();
     c.moveTo(cx - g - l, cy); c.lineTo(cx - g, cy); c.moveTo(cx + g, cy); c.lineTo(cx + g + l, cy);
     c.moveTo(cx, cy - g - l); c.lineTo(cx, cy - g); c.moveTo(cx, cy + g); c.lineTo(cx, cy + g + l);
@@ -808,22 +809,23 @@ function drawData(t) {
       for (const side of [-1, 1]) {
         const p = toScreen(worldOf(t + 4, f01, side, 0));
         if (!p) continue;
-        c.beginPath(); c.moveTo(p.x - 5 * u, p.y); c.lineTo(p.x + 5 * u, p.y); c.stroke();
+        c.beginPath(); c.moveTo(p.x - 3 * u, p.y); c.lineTo(p.x + 3 * u, p.y); c.stroke();
         c.textAlign = side < 0 ? "right" : "left";
-        c.fillText(fmtHz(hz).toUpperCase(), p.x + side * 9 * u, p.y);
+        c.fillText(fmtHz(hz), p.x + side * 7 * u, p.y);
       }
     }
-    // secondes à venir, au sol (ou au bas du tunnel)
+    // secondes à venir, au sol (ou au bas du tunnel), une graduation sur deux
     c.textAlign = "left";
-    for (let s = 1; s <= 8; s++) {
-      const p = toScreen(worldOf(Math.ceil(t) + s, 0, 1, 0));
+    const t2 = Math.ceil(t / 2) * 2;
+    for (let s = 2; s <= 8; s += 2) {
+      const p = toScreen(worldOf(t2 + s, 0, 1, 0));
       if (!p) continue;
-      c.beginPath(); c.moveTo(p.x - 4 * u, p.y); c.lineTo(p.x + 4 * u, p.y); c.stroke();
-      c.fillText(`+${(Math.ceil(t) + s - t).toFixed(1)} S`, p.x + 8 * u, p.y);
+      c.beginPath(); c.moveTo(p.x - 3 * u, p.y); c.lineTo(p.x + 3 * u, p.y); c.stroke();
+      c.fillText(`+${Math.round(t2 + s - t)}s`, p.x + 6 * u, p.y);
     }
     // lecture en haut, au centre
     c.textAlign = "center";
-    c.fillText(`T ${fmtMs(t)}   Z ${(-t * S.speed).toFixed(1)}   ${Math.round(spec.fps)} FR/S   ${BANDS} BANDS`, W / 2, 22 * u);
+    c.fillText(`${fmtMs(t)}  ·  z ${(-t * S.speed).toFixed(1)}`, W / 2, 18 * u);
   }
 
   if (!S.tracking) return;
@@ -848,8 +850,8 @@ function drawData(t) {
 
   // liens : les événements reliés dans l'ordre du temps, en pointillés
   if (S.links && shown.length > 1) {
-    c.setLineDash([3 * u, 4 * u]);
-    c.strokeStyle = inkA(0.35);
+    c.setLineDash([1 * u, 4 * u]);
+    c.strokeStyle = inkA(0.18);
     c.beginPath();
     shown.forEach((s, j) => { if (j) c.lineTo(s.p.x, s.p.y); else c.moveTo(s.p.x, s.p.y); });
     c.stroke();
@@ -861,42 +863,40 @@ function drawData(t) {
   const overlaps = (x, y, w, h) => placed.some((q) => x < q.x + q.w && x + w > q.x && y < q.y + q.h && y + h > q.y);
   for (const s of [...shown].sort((a, b) => a.dist - b.dist)) {
     const { pk, p, dist, fade } = s;
-    const r = Math.max(6, Math.min(34, 120 / dist)) * u, e = r * 0.45;
+    const r = Math.max(4, Math.min(14, 60 / dist)) * u, e = Math.min(r * 0.5, 4 * u);
     c.globalAlpha = fade;
-    // crochets de visée
-    c.strokeStyle = inkA(0.9);
+    // crochets de visée : quatre petits coins
+    c.strokeStyle = inkA(0.55);
     c.beginPath();
     for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
       c.moveTo(p.x + sx * r, p.y + sy * (r - e)); c.lineTo(p.x + sx * r, p.y + sy * r); c.lineTo(p.x + sx * (r - e), p.y + sy * r);
     }
     c.stroke();
-    // étiquette en verre : petit carré, identifiant, fréquence, niveau au-dessus du fond
-    const text = `EV-${String(pk.id).padStart(4, "0")} · ${fmtHz(pk.hz)} · +${Math.round(pk.dB)} dB`.toUpperCase();
-    const tw = c.measureText(text).width, padX = 8 * u, sq = 4 * u, bw = tw + padX * 2 + sq + 7 * u, bh = 20 * u, gap = 4 * u;
-    // place libre : du côté extérieur d'abord, en montant puis en descendant ; sinon l'autre côté ; sinon pas d'étiquette
+    // texte seul, sans fond : identifiant, fréquence, niveau au-dessus du fond
+    const text = `${String(pk.id).padStart(4, "0")}  ${fmtHz(pk.hz)}  +${Math.round(pk.dB)}dB`;
+    const tw = c.measureText(text).width, bh = 11 * u, gap = 3 * u;
+    // place libre : du côté extérieur d'abord, en montant puis en descendant ; sinon l'autre côté ; sinon rien
     let spot = null;
     const out = p.x < W / 2 ? -1 : 1;
     for (const dir of [out, -out]) {
-      for (const n of [0, -1, 1, -2, 2, -3]) {
-        const lx = p.x + dir * (r + 18 * u), ly = p.y - r - 14 * u + n * (bh + gap);
-        let bx = dir > 0 ? lx : lx - bw;
-        bx = Math.max(8 * u, Math.min(W - bw - 8 * u, bx));
+      for (const n of [0, -1, 1, -2, 2]) {
+        const lx = p.x + dir * (r + 8 * u), ly = p.y - r - 6 * u + n * (bh + gap);
+        let bx = dir > 0 ? lx : lx - tw;
+        bx = Math.max(8 * u, Math.min(W - tw - 8 * u, bx));
         const by = Math.max(8 * u, Math.min(H - bh - 8 * u, ly - bh / 2));
-        if (!overlaps(bx, by, bw, bh)) { spot = { dir, bx, by, ax: dir > 0 ? bx : bx + bw }; break; }
+        if (!overlaps(bx, by, tw, bh)) { spot = { dir, bx, by, ax: dir > 0 ? bx - 2 * u : bx + tw + 2 * u }; break; }
       }
       if (spot) break;
     }
     if (!spot) continue;
-    placed.push({ x: spot.bx - gap, y: spot.by - gap, w: bw + 2 * gap, h: bh + 2 * gap });
+    placed.push({ x: spot.bx - gap, y: spot.by - gap, w: tw + 2 * gap, h: bh + 2 * gap });
     const ly = spot.by + bh / 2;
-    // trait de rappel du coin des crochets vers l'étiquette
+    // trait de rappel, très fin
+    c.strokeStyle = inkA(0.3);
     c.beginPath(); c.moveTo(p.x + spot.dir * r, p.y - r); c.lineTo(spot.ax, ly); c.stroke();
-    c.fillStyle = "rgba(190,190,190,0.72)";
-    c.beginPath(); c.roundRect(spot.bx, spot.by, bw, bh, 8 * u); c.fill();
-    c.fillStyle = "#000";
-    c.fillRect(spot.bx + padX, ly - sq / 2, sq, sq);
+    c.fillStyle = inkA(0.65);
     c.textAlign = "left";
-    c.fillText(text, spot.bx + padX + sq + 7 * u, ly + 0.5 * u);
+    c.fillText(text, spot.bx, ly);
   }
   c.globalAlpha = 1;
 }
