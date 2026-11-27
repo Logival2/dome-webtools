@@ -56,9 +56,10 @@
   </div>
 
   <!-- Canaux : le spectre spatialisé, un spectrogramme par haut-parleur, et un radar vu de dessus -->
-  <div class="section collapsed" id="chanSection">
-    <h2>Channels</h2>
-    <canvas id="chanView" width="460" height="300" title="One spectrogram per channel · click to jump"></canvas>
+  <div class="section" id="chanSection">
+    <h2>Spatial audio</h2>
+    <!-- spectrogrammes par canal : gardés dans le code, masqués (retirer « hidden » pour les revoir) -->
+    <canvas id="chanView" width="460" height="300" title="One spectrogram per channel · click to jump" hidden></canvas>
     <canvas id="radar" width="320" height="320" title="Seen from above, front at the top: energy of each speaker, the direction the sound comes from, and the events near the playhead"></canvas>
     <p class="hint" id="chanInfo"></p>
   </div>
@@ -884,7 +885,7 @@ function drawChannelsBase() {
   const ch = spec.channels, order = chanOrder(), C = order.length;
   const W = chanView.width, lane = Math.floor(chanView.height / C), H = lane * C;
   const img = cvctx.createImageData(W, chanView.height);
-  order.forEach((c, row) => {
+  if (!chanView.hidden) order.forEach((c, row) => {
     const q = ch.chDb[c];
     for (let x = 0; x < W; x++) {
       const f0 = Math.floor(x / W * spec.frames), f1 = Math.max(f0 + 1, Math.floor((x + 1) / W * spec.frames));
@@ -907,7 +908,8 @@ function drawChannelsBase() {
 function drawChannels(t) {
   if (!chanBase || !spec) return;
   const { img, lane, order } = chanBase, ch = spec.channels, L = ch.layout.ch;
-  // spectrogrammes empilés, nom de chaque canal, tête de lecture
+  // spectrogrammes empilés, nom de chaque canal, tête de lecture (s'ils sont affichés)
+  if (!chanView.hidden) {
   cvctx.putImageData(img, 0, 0);
   cvctx.font = `20px "Replica Mono", monospace`;
   cvctx.textBaseline = "top";
@@ -920,6 +922,7 @@ function drawChannels(t) {
   const x = t / spec.duration * chanView.width;
   cvctx.fillStyle = "#e4fb02";
   cvctx.fillRect(x - 1, 0, 2, chanView.height);
+  }
 
   // radar : vu de dessus, l'avant en haut ; un point par haut-parleur, grossi par son énergie
   const W = radar.width, cx = W / 2, cy = W / 2, R = W * 0.36;
